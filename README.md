@@ -1,13 +1,6 @@
-# Assistant XLMusic V4
-
-Version de test avec lecture du catalogue public XLMusic.fr.
-
-## Périmètre V4
-- Guitares électriques
-- Prix et disponibilité issus de XLMusic.fr
-- Sélection de produits transmise à GPT-5.6 Luna
+# Assistant XLMusic V5
+Lecture automatique du flux XML Google Shopping généré par Oxatis.
+- Catalogue complet du flux
+- Prix, stock, quantité, EAN, marque, catégorie, description, URL, image
 - Aucune modification d'EBP ou d'Oxatis
-
-## Variables Render
-- OPENAI_API_KEY
-- OPENAI_MODEL = gpt-5.6-luna
+Variables Render : OPENAI_API_KEY, OPENAI_MODEL=gpt-5.6-luna
