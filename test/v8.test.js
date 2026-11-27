@@ -198,7 +198,7 @@ test("V8 — un SKU dans des produits associés ne valide pas le lien principal"
   const redirect = createProductLinkVerifier(async url => new URL(url).pathname.includes("squier")
     ? Response.redirect("https://www.xlmusic.fr/fiche-differente-c2x555")
     : Response.json({ "@type": "Product", sku: squier.id }), { strict: true });
-  assert.equal(await redirect(squier), null);
+  assert.equal(await redirect(squier), "https://www.xlmusic.fr/PBSCProduct.asp?ItmID=42636242");
 });
 
 test("V8 — un modèle précis indisponible est signalé sans offre de vente", async () => {
@@ -266,4 +266,32 @@ test("un panier reste disponible lorsqu’un lien ne peut être confirmé", asyn
   });
   assert.deepEqual(titles(result), [squier.title, amp.title]);
   assert.match(result.reply, /327,00/);
+});
+
+test("V8 — un panier sans précision exclut le modèle gaucher, même moins cher", async () => {
+  const left = product("901", "Guitare électrique HSS Gaucher", 150);
+  const catalog = [left, squier, amp];
+  const access = { productLink: async () => null, readLive: async id => catalog.find(item => item.oxId === id) };
+  const base = intent([slot("electric"), slot("amp")]);
+  assert.deepEqual(titles(await advise(catalog, plan(base, guitarAndAmp), access)), [squier.title, amp.title]);
+  const followup = { ...base, continuity: "followup" };
+  assert.deepEqual(titles(await advise(catalog,
+    plan(followup, "Précision : je suis gaucher.", [guitarAndAmp]), access)), [left.title, amp.title]);
+  assert.deepEqual(titles(await advise(catalog,
+    plan(followup, "Je ne suis pas gaucher.", [guitarAndAmp]), access)), [squier.title, amp.title]);
+  const changed = { ...access, readLive: async id =>
+    id === squier.oxId ? { ...squier, title: squier.title + " Gaucher" } : access.readLive(id) };
+  assert.deepEqual(titles(await advise(catalog, plan(base, guitarAndAmp), changed)), []);
+});
+
+test("V8 — une adresse bloquée laisse place à la fiche Oxatis si son identité est confirmée", async () => {
+  const requests = [];
+  const verifier = createProductLinkVerifier(async url => {
+    requests.push(url);
+    return url.includes("PBSCProduct")
+      ? Response.json({ "@type": "Product", sku: squier.id })
+      : new Response("Accès refusé", {status: 403});
+  }, {strict:true});
+  assert.equal(await verifier(squier), "https://www.xlmusic.fr/PBSCProduct.asp?ItmID=42636242");
+  assert.equal(requests.length, 2);
 });

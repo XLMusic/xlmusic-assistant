@@ -37,6 +37,9 @@ jamais sa compatibilité.
 Pour un débutant qui ne demande pas de format réduit, préfère une taille
 standard. Garde le style musical, le lieu, l'expérience et le contexte
 d'utilisation comme préférences quand ce ne sont pas des exigences.
+La latéralité d’une guitare est gérée à partir des mots du client.
+Ne recopie pas gaucher, droitier ou main gauche/droite dans names ou evidence,
+sauf si le mot fait partie d’un libellé précis demandé.
 Pour evidence, sépare les caractéristiques obligatoires. Dans chaque
 expression, sépare si utile des synonymes français/anglais par « | ».
 N'utilise excluded que pour des refus explicites et concrets.
@@ -87,10 +90,15 @@ export function shoppingPlan(intent, message, history, autonomous) {
   const ownsMicrophone = /\b(?:j ai deja|je possede deja|j utilise deja) un micro\b/.test(latest)
     ? true : plan.ownsMicrophone === true;
   const beginner = /\b(?:je debute|debutant|debutante|premiere guitare)\b/.test(context);
+  const leftWords = /\b(?:gauchers?|gaucheres?|main gauche|left handed)\b/;
+  const rightWords = /\b(?:droitiers?|droitieres?|main droite|right handed|(?:pas|non) (?:un |une |pour )?gaucher(?:e)?s?)\b/;
+  const handednessNote = [...relevant].reverse().map(normalize)
+    .find(text => leftWords.test(text) || rightWords.test(text));
+  const leftHanded = Boolean(handednessNote && leftWords.test(handednessNote) && !rightWords.test(handednessNote));
   const compact = /\b(?:format reduit|petit diapason|guitare de voyage|petite taille|guitare pour enfant|mikro|mini strat|short scale)\b/.test(context);
   const venueAnswered = /\ben (?:interieur|exterieur)\b/.test(latest) ||
     (continuity === "followup" && /\ben (?:interieur|exterieur)\b/.test(context));
   const question = (plan.question === "venue" && venueAnswered || plan.question === "microphone" && ownsMicrophone)
     ? "none" : plan.question;
-  return { ...plan, continuity, allowOverBudget, outdoor, ownsMicrophone, beginner, compact, question };
+  return { ...plan, continuity, allowOverBudget, outdoor, ownsMicrophone, beginner, compact, leftHanded, question };
 }

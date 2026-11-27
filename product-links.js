@@ -76,37 +76,45 @@ export function createProductLinkVerifier(fetchImpl = fetch, { strict = false } 
     const fallback = isVerifiedSquier ? verifiedSquier.url : null;
     const oxId = String(product.oxId ?? "");
     const lookup = /^[1-9]\d*$/.test(oxId) ? `${origin}/PBSCProduct.asp?ItmID=${oxId}` : "";
-    let url = shopProduct(product.url) || fallback || shopProduct(lookup);
-    if (!url) return strict ? null : fallback;
-    const key = JSON.stringify([url, product.id, product.gtin]);
+    const possible = [...new Set([shopProduct(product.url), fallback, shopProduct(lookup)].filter(Boolean))];
+    const starts = strict ? possible.filter(url => !oxId || routeId(url) === oxId) : possible.slice(0, 1);
+    if (!starts.length) return strict ? null : fallback;
+    const key = JSON.stringify([starts, product.id, product.gtin, oxId]);
     const cached = cache.get(key);
     if (cached?.expires > Date.now()) return cached.result;
     const signal = AbortSignal.timeout(2500);
+    const visited = new Set();
     let link = null;
     let definitivelyMissing = false;
-    try {
-      for (let redirects = 0; url && redirects <= 2; redirects++) {
-        const response = await fetchImpl(url, { redirect: "manual", signal });
-        if ([301, 302, 303, 307, 308].includes(response.status)) {
-          await response.body?.cancel();
-          const location = response.headers.get("location");
-          url = location ? shopProduct(new URL(location, url)) : null;
-          if (!url) definitivelyMissing = true;
-          continue;
+    for (const start of starts) {
+      let url = start;
+      try {
+        for (let redirects = 0; url && !visited.has(url) && redirects <= 2; redirects++) {
+          if (strict && oxId && routeId(url) !== oxId) break;
+          visited.add(url);
+          const response = await fetchImpl(url, { redirect: "manual", signal });
+          if ([301, 302, 303, 307, 308].includes(response.status)) {
+            await response.body?.cancel();
+            const location = response.headers.get("location");
+            url = location ? shopProduct(new URL(location, url)) : null;
+            if (!url) definitivelyMissing = true;
+            continue;
+          }
+          if (response.ok) {
+            const html = await response.text();
+            const confirmed = strict ? confirmsPrimaryProduct(html, product) : confirmsIdentity(html, product);
+            if (confirmed) link = url;
+            else definitivelyMissing = true;
+          } else {
+            if ([404, 410].includes(response.status)) definitivelyMissing = true;
+            await response.body?.cancel();
+          }
+          break;
         }
-        if (response.ok) {
-          const html = await response.text();
-          const confirmed = strict
-            ? (!oxId || routeId(url) === oxId) && confirmsPrimaryProduct(html, product)
-            : confirmsIdentity(html, product);
-          if (confirmed) link = url;
-          else definitivelyMissing = true;
-        } else if ([404, 410].includes(response.status)) definitivelyMissing = true;
-        if (!response.ok) await response.body?.cancel();
-        break;
+      } catch {
+        // A public product page can be temporarily unavailable independently of Oxatis.
       }
-    } catch {
-      // A public product page can be temporarily unavailable independently of Oxatis.
+      if (link || signal.aborted) break;
     }
     const result = link || (!strict && !definitivelyMissing && fallback);
     if (cache.size >= 2000) cache.delete(cache.keys().next().value);

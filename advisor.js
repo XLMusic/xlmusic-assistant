@@ -69,6 +69,8 @@ function productIdentity(product, slot) {
   return familyMatches({ ...product, productType: category }, { ...slot, names: [] });
 }
 
+const leftGuitar = /\b(?:gauchers?|gaucheres?|main gauche|left hand(?:ed)?|lefty|lh)\b/;
+
 function assess(product, slot, plan) {
   const clauses = descriptions(product);
   const proved = new Set(Object.entries(facts)
@@ -85,7 +87,12 @@ function assess(product, slot, plan) {
   const missing = required.filter(name => !proved.has(name)).length +
     slot.evidence.filter(group => !positive(clauses, clause =>
       group.split("|").some(term => phrase(clause, normalize(term))))).length;
-  const excluded = slot.excluded.some(term => positive(clauses, clause => phrase(clause, normalize(term))));
+  const guitar = slot.family === "electric" || (slot.family === "other" &&
+    /\bguitares?\b/.test(normalize([product.title, product.productType].join(" "))) &&
+    !accessoryTitle.test(normalize(product.title)));
+  const left = leftGuitar.test(normalize([product.title, product.productType, ...(product.categories ?? [])].join(" ")));
+  const wrongHand = !plan.exactProduct && guitar && left !== Boolean(plan.leftHanded);
+  const excluded = wrongHand || slot.excluded.some(term => positive(clauses, clause => phrase(clause, normalize(term))));
   const compact = slot.family === "electric" && compactGuitar.test(text);
   const preferences = [...new Set(slot.preferred.flatMap(terms))].filter(word => phrase(text, word)).length;
   const score = preferences + (isStock(product) ? 2 : 0) +
@@ -333,7 +340,7 @@ export async function adviseExactProduct(products, message, services) {
   const plan = {
     slots: [{ family: "other", names: [candidate.id], brands: [], required: [],
       evidence: [], excluded: [], preferred: [] }],
-    maxCents: null, exclusive: false, inStock: false, question: "none", allowOverBudget: true
+    maxCents: null, exclusive: false, inStock: false, question: "none", allowOverBudget: true, exactProduct: true
   };
   const result = await advise([candidate], plan, {
     ...services,
