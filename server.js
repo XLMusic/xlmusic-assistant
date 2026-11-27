@@ -154,7 +154,9 @@ app.get("/__v8_oxatis_format", async (req, res) => {
   const xml = new XMLParser({parseTagValue:false,removeNSPrefix:true,processEntities:false}).parse(raw);
   res.json({http:r.status,contentType:r.headers.get("content-type")?.split(";")[0], bytes:raw.length,
    root:names(xml), shapes:Object.fromEntries(names(xml).map(k=>[k,names(typeof xml[k] === "object" ? xml[k] : null)])),
-   status:numeric(xml.DataResultService?.StatusCode), subcode:numeric(xml.DataResultService?.StatusSubCode),
+   status:numeric((xml.DataResultService ?? xml.ResultService)?.StatusCode),
+   subcode:numeric((xml.DataResultService ?? xml.ResultService)?.StatusSubCode),
+   categories: [...new Set((JSON.stringify((xml.DataResultService ?? xml.ResultService)?.ErrorDetails ?? "").match(/limit|quot[ae]|invalid|authent|token|licen[cs]|expired|expir|denied|application|appid|forbidden|method|service|not allowed|inconn|incorrect|account|exceed|request|daily|hour|minute|time|maximum|restrict|disabled|inactive|trial|supplier|autorisation|bloqu|boutique|désactiv|interdit|sécurité|abonnement|site|shop|access|error|insuffis|privilege|permission/gi) ?? []).map(s=>s.toLowerCase()))],
    html:/<html[\s>]/i.test(raw), blocked:/cloudflare|request blocked|access denied/i.test(raw),
    quota:/quota|request limit|too many requests/i.test(raw), authentication:/invalid token|invalid appid|authentication failed/i.test(raw)});
  } catch { res.status(502).json({error:"format_probe_failed"}); }
