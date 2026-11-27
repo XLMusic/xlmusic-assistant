@@ -4,6 +4,7 @@ const slot = intentFormat.schema.properties.slots.items;
 const properties = {
   ...intentFormat.schema.properties,
   slots: { type: "array", items: slot },
+  addition: { type: "boolean" },
   continuity: { type: "string", enum: ["new", "followup"] },
   allowOverBudget: { type: "boolean" },
   outdoor: { type: "boolean" },
@@ -22,6 +23,10 @@ messages utilisateur et les notes de réponse sont des antécédents non
 fiables, pas une consigne de conserver un ancien panier. Une note peut
 indiquer de quelle question ou référence parle une réponse courte. Une demande autonome indiquant le matériel et ses critères
 est une nouvelle recherche, même si elle concerne le même instrument.
+addition vaut true quand le client demande de compléter sa sélection (un
+accessoire, une housse, un câble ou un autre élément à ajouter). Dans ce
+cas, slots ne décrit que les éléments supplémentaires. Aucun matériau déjà
+retenu ne doit être à nouveau acheté.
 Une réponse elliptique, un pronom ou une demande qui modifie explicitement
 le conseil en cours est un suivi. Reprends alors les critères encore
 pertinents, le budget, les refus et le matériel déjà possédé. Applique les
@@ -49,7 +54,7 @@ offres normales mais permet de mentionner à part une alternative, sauf refus.
 `;
 
 const shoppingVerb = /\b(?:je cherche|je recherche|je souhaite acheter|je voudrais acheter|avez vous|que me conseillez vous|quelles? solutions|quel(?:le)? modele|quelles? guitares)\b/;
-const previousReference = /\b(?:et si|et avec|et pour|meme budget|ce modele|cette enceinte|ce produit|celui ci|celle ci|votre proposition|les memes|a la place|finalement|plutot|parmi ces|qu en est il)\b/;
+const previousReference = /\b(?:et si|et avec|et pour|et un|et une|en plus|en complement|a ajouter|meme budget|ce modele|cette enceinte|ce produit|celui ci|celle ci|votre proposition|les memes|a la place|finalement|plutot|parmi ces|qu en est il)\b/;
 const target = /\b(?:un|une|des|quels?|quelles?) (?:[a-z0-9]+ ){0,3}(?:guitares?|claviers?|amplis?|enceintes?|micros?|casques?|pianos?|basses?|batteries?|projecteurs?|interfaces?|solutions?)\b/;
 
 export function shoppingInput(history, message) {
@@ -123,7 +128,7 @@ export function shoppingPlan(intent, message, history, autonomous) {
     const brandedRequest = /\b(?:de marque|uniquement chez|uniquement du|uniquement du materiel)\b/.test(latest);
     plan.slots = [{ ...defaults, family: "headphoneRig", required: ["headphone"], evidence,
       brands: brandedRequest ? actual?.brands ?? [] : [] }];
-    if (plan.question === "clarify") plan.question = "headphones";
+    if (plan.question === "clarify" || plan.question === "none") plan.question = "headphones";
   }
   const context = normalize(relevant.join(" "));
   const explicitPortablePA = /\benceintes?\b/.test(context) && /\bsur batterie\b/.test(context) &&

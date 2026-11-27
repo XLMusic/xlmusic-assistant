@@ -22,6 +22,8 @@ const facts = {
   pickup: /\b(?:micros? (?:doubles?|humbuckers?)|humbuckers?)\b/,
   simpleControls: /\b(?:commandes simples|prise en main (?:simple|facile)|facile a utiliser|interface intuitive)\b/,
   gain: /\b(?:(?:canal|mode) (?:de )?(?:overdrive|sature|distorsion)|saturation (?:integr[eé]e|reglable))\b/,
+  tuner: /\b(?:accordeur integre|built in tuner)\b/,
+  effects: /\b(?:modelisations? d effets?|effets? integres?|built in effects)\b/,
   portable: /\b(?:poignee (?:de transport|integree)|format compact|facile a transporter|leger(?:e)?)\b/
 };
 
@@ -41,6 +43,8 @@ function positive(clauses, matches) {
 }
 
 function productIdentity(product, slot) {
+  if (slot.matches) return slot.matches(product);
+  if (slot.compatibleWith && !slot.compatibleWith(product)) return false;
   const title = normalize(product.title);
   const categoryFields = [product.productType, ...(product.categories ?? [])].filter(Boolean);
   const categories = categoryFields.flatMap(value => String(value).split(/\s*>\s*/)).map(normalize);
@@ -192,10 +196,12 @@ const explanations = {
   pickup: "Un micro double est un atout si vous jouez avec des sons saturés.",
   simpleControls: "Des commandes simples vous feront passer plus vite du réglage au jeu.",
   gain: "Le circuit de saturation vous donne accès à des sons rock depuis l’ampli.",
+  tuner: "L’accordeur intégré permet de vérifier l’accordage sans ajouter un appareil.",
+  effects: "Les effets intégrés permettent de varier les sons pendant les répétitions.",
   portable: "Le format facilite le transport pour les répétitions ou petites prestations."
 };
 const genericBenefit = {
-  electric: "C’est une guitare électrique qui répond aux critères de la recherche.",
+  electric: "Vous pouvez partir sur cette guitare électrique pour votre recherche.",
   amp: "Cet ampli guitare complète le panier pour répéter et travailler votre jeu.",
   headphoneRig: explanations.headphone,
   pa: "Ce modèle réunit les fonctions demandées pour votre prestation.",
@@ -205,7 +211,7 @@ const genericBenefit = {
 function benefitsFor(item, plan) {
   const { family, compact, proved } = item;
   const priority = family === "pa" ? ["battery", "bluetooth", "microphone", "portable"]
-    : family === "headphoneRig" ? ["headphone", "simpleControls"]
+    : family === "headphoneRig" ? ["headphone", "tuner", "effects", "simpleControls"]
     : family === "amp" ? ["gain", "simpleControls", "portable"] : ["pickup", "simpleControls", "portable"];
   const benefits = priority.filter(fact => proved.has(fact)).map(fact => explanations[fact]);
   if (family === "electric" && (plan.beginner || compact) && !plan.compact) {
@@ -233,7 +239,7 @@ Les prix sont en centimes. Une option peut être un panier complet.
 Si plusieurs produits répondent à la demande, sélectionne la meilleure
 option. Les informations manquantes ne sont pas des caractéristiques.`;
 
-function availabilityOf(product) {
+export function availabilityOf(product) {
   const days = product.daysToShip;
   const state = isStock(product) ? "en stock" : "sur commande";
   if (Number.isInteger(days) && days >= 0) {
@@ -243,6 +249,7 @@ function availabilityOf(product) {
 }
 
 function followUp(plan) {
+  if (plan.suppressQuestion) return undefined;
   if (plan.outdoor && plan.slots.some(slot => slot.family === "pa")) {
     return "En extérieur, la portée dépend du bruit ambiant et de la distance au public. Pour une cinquantaine de personnes, quelle distance voulez-vous couvrir ?";
   }
