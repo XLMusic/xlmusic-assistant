@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -137,29 +136,6 @@ async function catalogStatus() {
  if (useOxatis || (!catalog.length && !lastCatalogError)) await refreshCatalog();
  return { source, count: catalog.length, updatedAt: catalogUpdatedAt, error: lastCatalogError };
 }
-
-app.get("/__v8_catalog_diagnostic", async (req, res) => {
- const key = req.get("authorization")?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
- const expected = Buffer.from("9e2d4fb3ef409eb4de814c9702a5dabd9a4bad5de722cfc9563085865ed5315a", "hex");
- res.set("Cache-Control", "no-store");
- if (!key || !timingSafeEqual(createHash("sha256").update(key).digest(), expected)) return res.sendStatus(404);
- const state = await catalogStatus();
- const sku = "231-1600-000";
- const publicId = "41209146";
- const matches = catalog.filter(p => p.id === sku || String(p.oxId) === publicId ||
-    /mustang[^a-z0-9]+micro[^a-z0-9]+plus/i.test(p.title));
- const details = p => p ? { oxId:p.oxId, sku:p.id, title:p.title, price:p.price, visible:p.visible,
-    published:p.published, canOrder:p.canOrder, availability:p.availability, quantity:p.quantity } : null;
- const ids = [...new Set([publicId, ...matches.map(p => String(p.oxId)).filter(id => /^[1-9]\d{0,14}$/.test(id))])].slice(0,3);
- const live = await Promise.all(ids.map(async id => {
-  try { return {id, product:details(await oxatis.product(id))}; }
-  catch(error) {
-   return {id, code:/^[a-z0-9_]{1,32}$/i.test(error?.code ?? "") ? error.code : "unknown",
-    status:Number.isInteger(error?.status) ? error.status : null};
-  }
- }));
- res.json({ count:state.count, catalogError:state.error, matches:matches.map(details), live });
-});
 
 app.get("/health",async(_,res)=>{
  const state=await catalogStatus();
