@@ -1,8 +1,8 @@
 import { advise, availabilityOf } from "./advisor.js";
-import { explicitCompatibility, guitarStrings, isHeadphone, isWirelessMic, isXlrCable, productPorts } from "./compatibility.js";
+import { explicitCompatibility, guitarStrings, headphoneCandidate, isHeadphone, isJackCable, isXlrCable, productPorts, wirelessCandidate, wirelessOutput } from "./compatibility.js";
 import { applyExplicitConstraints, cents, isStock, money, normalize } from "./recommendations.js";
 
-const empty = () => ({items: [], budget: null, pending: null, asked: [], facts: {}, topic: null});
+const empty = () => ({items: [], budget: null, exclusive: false, pending: null, asked: [], facts: {}, topic: null});
 const safeAmount = value => Number.isSafeInteger(value) && value > 0 && value <= 100000000;
 const short = value => typeof value === "string" && value.length <= 100 ? value : "";
 const factKeys = ["venue","distance","headphones","microphone","cable","strings"];
@@ -27,6 +27,7 @@ export function restoreConversation(value, history, products) {
   if (value && typeof value === "object") {
     state.items = Array.isArray(value.items) ? [...new Set(value.items.slice(0,3).map(short).filter(Boolean))] : [];
     state.budget = safeAmount(value.budget) ? value.budget : null;
+    state.exclusive = value.exclusive === true;
     state.pending = factKeys.includes(value.pending) ? value.pending : null;
     state.asked = Array.isArray(value.asked) ? value.asked.filter(key => factKeys.includes(key)).slice(0,6) : [];
     state.facts = Object.fromEntries(factKeys.filter(key=>answerValues.has(value.facts?.[key])).map(key=>[key,value.facts[key]]));
@@ -44,7 +45,7 @@ export function restoreConversation(value, history, products) {
   if (state.budget === null && !value) {
     for (const turn of [...history].reverse()) {
       const p = applyExplicitConstraints({slots:[],maxCents:null,inStock:false},typeof turn==="string"?turn:turn.message);
-      if (safeAmount(p.maxCents)) { state.budget=p.maxCents; break; }
+      if (safeAmount(p.maxCents)) { state.budget=p.maxCents;state.exclusive=p.exclusive===true; break; }
     }
   }
   return state;
@@ -80,7 +81,7 @@ function answerFacts(message,state) {
   if (["headphones","microphone","cable"].includes(state.pending) && (affirmative||negative)) {
     state.facts[state.pending]=negative?"no":"yes";
   }
-  return {text,affirmative,negative};
+
 }
 
 function itemResult(product,url) {
@@ -103,21 +104,28 @@ async function liveAnchors(items,catalog,services) {
   return output.filter(Boolean);
 }
 
-function accessoryPlan(matches,maxCents) {
-  return {slots:[{family:"other",matches,names:[],brands:[],required:[],evidence:[],excluded:[],preferred:[]}],
+function accessoryPlan(matches,maxCents,candidate) {
+  return {slots:[{family:"other",matches,candidate,names:[],brands:[],required:[],evidence:[],excluded:[],preferred:[]}],
     maxCents,exclusive:false,inStock:true,allowOverBudget:false,question:"none"};
 }
 
-function requestedBudget(message,current) {
-  if (/\b(?:sans limite de budget|pas de budget fixe)\b/.test(normalize(message))) return null;
-  return applyExplicitConstraints({slots:[],maxCents:current,inStock:false},message).maxCents;
+function requestedBudget(message,state) {
+  if (/\b(?:sans limite de budget|pas de budget fixe)\b/.test(normalize(message))) {
+    state.exclusive=false;
+    return null;
+  }
+  const plan=applyExplicitConstraints({slots:[],maxCents:state.budget,exclusive:state.exclusive,inStock:false},message);
+  state.exclusive=plan.exclusive===true;
+  return plan.maxCents;
 }
+
+const availableBudget = (remaining,state) => remaining===null?null:remaining-Number(state.exclusive);
 
 export async function handleConversation(message,state,catalog,services) {
   const text=normalize(message);
   if (newTopic.test(text)) return null;
   const previous=state.pending;
-  const {affirmative,negative}=answerFacts(message,state);
+  answerFacts(message,state);
   if (previous && state.facts[previous]) state.pending=null;
   const requestsStrings=/\bcordes?\b/.test(text)&&/\bguitare\b/.test(text);
   const kind=stringKind(text);
@@ -133,7 +141,8 @@ export async function handleConversation(message,state,catalog,services) {
       const prompt=same?"Regardez les trois cordes les plus fines : si elles sont en nylon, c’est une classique. Si elles sont métalliques, c’est généralement une folk. Une marque et un modèle suffisent aussi.":question;
       return result(prompt,state,{followUp:same?null:question,contextMode});
     }
-    const selected=await advise(catalog,accessoryPlan(p=>guitarStrings(p,material),requestedBudget(message,state.budget)),services);
+    state.budget=requestedBudget(message,state);
+    const selected=await advise(catalog,accessoryPlan(p=>guitarStrings(p,material),availableBudget(state.budget,state)),services);
     state.pending=null;
     state.items=selected.products.map(p=>p.sku);
     if (!selected.products.length) return result("Je n’ai pas trouvé de jeu adapté en stock. Si vous me donnez la marque et le modèle de votre guitare, je pourrai affiner.",state,{contextMode});
@@ -149,12 +158,12 @@ export async function handleConversation(message,state,catalog,services) {
       (/\b(?:pas (?:de |un )?casque|casque compatible|quel casque|un casque (?:en plus|pour aller avec))\b/.test(text)||addWords.test(text));
   if (state.items.length && (microphone||headphones)) {
     const anchors=await liveAnchors(state.items,catalog,services);
-    state.budget=requestedBudget(message,state.budget);
+    state.budget=requestedBudget(message,state);
     if (anchors.length!==state.items.length) {
       return result("Je ne peux plus confirmer le panier précédent en stock. Souhaitez-vous que je recherche un nouvel ensemble complet ?",state);
     }
     const family=headphones?"headphones":"wireless";
-    const anchor=anchors.find(item=>family==="headphones"?productPorts(item.fresh).headphoneOut:productPorts(item.fresh).paXlrIn);
+    const anchor=anchors.find(item=>family==="headphones"?productPorts(item.fresh).headphoneOut:(productPorts(item.fresh).paXlrIn||productPorts(item.fresh).paJackIn));
     if (!anchor) return result(family==="headphones"
       ? "Pour trouver le bon casque, il me faut le format de la sortie casque de votre appareil."
       : "Pour vérifier le branchement du récepteur, il me faut le type d’entrée micro ou ligne de votre enceinte.",state);
@@ -162,14 +171,16 @@ export async function handleConversation(message,state,catalog,services) {
     const remaining=state.budget===null?null:state.budget-priorCost;
     const included=family==="wireless"&&productPorts(anchor.fresh).wirelessIncluded;
     const second=/\b(?:deuxieme|second|supplementaire|en plus|autre|separe)\b/.test(text);
-    const match=family==="headphones"?isHeadphone:isWirelessMic;
+    const ports=productPorts(anchor.fresh);
+    const match=family==="headphones"?isHeadphone:product=>Boolean(wirelessOutput(product,ports));
+    const candidateType=family==="headphones"?headphoneCandidate:wirelessCandidate;
     if (anchors.some(item=>match(item.fresh))&&!second) {
       return result(family==="headphones"?"Le casque compatible figure déjà dans votre panier.":"Le système sans fil compatible figure déjà dans votre panier.",state);
     }
     let choice=null;
-    if (remaining===null||remaining>0) {
+    if (remaining===null||availableBudget(remaining,state)>0) {
       const offered=await advise(catalog.filter(p=>!state.items.includes(p.id)),
-        accessoryPlan(match,remaining),services);
+        accessoryPlan(match,availableBudget(remaining,state),candidateType),services);
       choice=offered.products[0]??null;
     }
     const anchorViews=anchors.map(a=>a.view);
@@ -183,23 +194,28 @@ export async function handleConversation(message,state,catalog,services) {
     }
     const additions=[choice];
     let cableNeeded=false;
-    if (family==="wireless" && state.facts.cable!=="yes") {
+    let connector="xlr";
+    if (family==="wireless") {
       const receiver=catalog.find(p=>p.id===choice.sku);
       let verifiedReceiver;
       try { if (receiver) verifiedReceiver=await services.readLive(receiver.oxId); } catch {}
-      const bundledCable=/\bcable xlr (?:fourni|inclus|livre)\b/.test(normalize(verifiedReceiver?.description));
-      cableNeeded=!bundledCable;
-      const forCable=remaining===null?null:remaining-cents(choice.price);
+      connector=verifiedReceiver ? wirelessOutput(verifiedReceiver,ports) : null;
+      if (!connector) return result(included
+        ? "Je n’ai pas pu reconfirmer la sortie du second récepteur. Le micro sans fil fourni avec l’enceinte reste utilisable."
+        : "Je n’ai pas pu reconfirmer la sortie du récepteur pour cette enceinte.",state,{products:anchorViews});
+      const includedCable=connector==="jack"?/\bcable (?:audio )?jack(?: 6 35)? (?:fourni|inclus|livre)\b/:/\bcable xlr (?:fourni|inclus|livre)\b/;
+      cableNeeded=!includedCable.test(normalize(verifiedReceiver?.description));
+      const forCable=remaining===null?null:availableBudget(remaining-cents(choice.price),state);
       if(cableNeeded && (forCable===null||forCable>0)) {
         const possible=await advise(catalog.filter(p=>!state.items.includes(p.id)&&p.id!==choice.sku),
-          accessoryPlan(isXlrCable,forCable),services);
+          accessoryPlan(connector==="jack"?isJackCable:isXlrCable,forCable),services);
         if(possible.products[0]){additions.push(possible.products[0]);cableNeeded=false;}
       }
     }
     const total=priorCost+additions.reduce((sum,p)=>sum+cents(p.price),0);
     const explanation=family==="headphones"
       ? "Son mini-jack 3,5 mm se branche sur la sortie casque. Vous pouvez jouer au casque sans utiliser votre ampli."
-      : "Le récepteur se branche à l’entrée micro/ligne de l’enceinte via sa sortie XLR.";
+      : `Le récepteur se branche à l’entrée micro/ligne de l’enceinte via sa sortie ${connector==="jack"?"jack 6,35 mm":"XLR"}.`;
     const lines=[
       included&&!second
         ? `Votre enceinte est déjà livrée avec un micro sans fil. Un second système n’est utile que si vous souhaitez deux micros. Dans ce cas, voici une option compatible.`
@@ -209,8 +225,8 @@ export async function handleConversation(message,state,catalog,services) {
       `${choice.title} · ${choice.price} TTC, ${choice.availability}.`,
       explanation,choice.url,
       ...additions.slice(1).flatMap(p=>[`Câble de liaison : ${p.title} · ${p.price} TTC, ${p.availability}.`,p.url]),
-      cableNeeded?"Il faut également un câble XLR. Je n’ai pas pu en confirmer un dans le budget restant.":null,
-      `${cableNeeded?"Sous-total hors câble XLR":included&&!second?"Total avec ce deuxième système":"Total du panier"} : ${money(total)} TTC, hors livraison.`,
+      cableNeeded?`Il faut également un câble ${connector==="jack"?"jack 6,35 mm":"XLR"}. Je n’ai pas pu en confirmer un dans le budget restant.`:null,
+      `${cableNeeded?"Sous-total hors câble":included&&!second?"Total avec ce deuxième système":"Total du panier"} : ${money(total)} TTC, hors livraison.`,
       state.budget===null?null:`Il reste ${money(state.budget-total)} sur votre budget.`
     ];
     if ((!included||second) && !cableNeeded) state.items=[...state.items,...additions.map(p=>p.sku)].slice(0,3);
@@ -232,7 +248,11 @@ export async function handleConversation(message,state,catalog,services) {
 export function recordConversation(resultValue,plan,state,message) {
   if (plan.continuity==="new") state=empty();
   answerFacts(message,state);
-  state.budget=requestedBudget(message,plan.maxCents ?? state.budget);
+  if (plan.maxCents!==null && plan.maxCents!==undefined) {
+    state.budget=plan.maxCents;
+    state.exclusive=plan.exclusive===true;
+  }
+  state.budget=requestedBudget(message,state);
   if (resultValue.products.length) state.items=[...new Set(resultValue.products.map(p=>p.sku).filter(Boolean))].slice(0,3);
   const q=questionKind(resultValue.followUp);
   if (q&&(state.facts[q]||state.asked.includes(q))) {
@@ -252,17 +272,17 @@ export async function addToConversation(plan,message,state,catalog,services) {
   if (anchors.length!==state.items.length) {
     return result("Je ne peux plus confirmer tous les articles déjà retenus. Souhaitez-vous chercher un ensemble de remplacement ?",state);
   }
-  state.budget=requestedBudget(message,state.budget);
+  state.budget=requestedBudget(message,state);
   const retained=anchors.reduce((sum,a)=>sum+cents(a.fresh.price),0);
   const remaining=state.budget===null?null:state.budget-retained;
   const prefix=remaining===null?null:`Budget restant : ${money(remaining)}.`;
-  if (remaining!==null&&remaining<=0) {
+  if (remaining!==null&&availableBudget(remaining,state)<=0) {
     return result([prefix,"Le budget disponible ne permet pas d’ajouter un article."].filter(Boolean).join(" "),state);
   }
   const slots=plan.slots.map(slot=>({...slot,
     compatibleWith:product=>anchors.some(a=>explicitCompatibility(product,a.fresh))}));
   const addition=await advise(catalog.filter(product=>!state.items.includes(product.id)),
-    {...plan,slots,maxCents:remaining,allowOverBudget:false,inStock:true,question:"none",suppressQuestion:true},services);
+    {...plan,slots,maxCents:availableBudget(remaining,state),exclusive:false,allowOverBudget:false,inStock:true,question:"none",suppressQuestion:true},services);
   if(!addition.products.length) return result([prefix,"Je n’ai pas confirmé de complément compatible en stock. Pouvez-vous préciser la connexion ou le format à respecter ?"]
     .filter(Boolean).join(" "),state);
   const total=retained+addition.products.reduce((sum,p)=>sum+cents(p.price),0);

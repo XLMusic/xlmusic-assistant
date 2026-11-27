@@ -80,3 +80,17 @@ test("une question déjà répondue est retirée et une nouvelle recherche réin
   assert.deepEqual(next.conversation.items,[]);
   assert.equal(next.conversation.budget,null);
 });
+
+test("les deux fiches Oxatis peuvent écrire le jack sans unité et les câbles DMX sont exclus",async()=>{
+  const prodipe={...headphones,description:"Jack stéréo Ø 3,5 + adaptateur Ø 6,3mm"};
+  const dmx=product("15","DMX","Câble DMX XLR XLR",5,"XLR mâle / XLR femelle");
+  const voice=product("16","UHF","Micro HF Chant W-UHF 100 M",99,"Micro main et récepteur. Sortie audio jack 6,35 mm asymétrique.");
+  const jack=product("17","JACK","Câble Jack Mâle Mono - Jack Mâle Mono 3m",9,"Liaison audio jack 6,35 mm.");
+  const source=[mustang,prodipe,aeris,dmx,voice,jack];
+  const adapters={readLive:async id=>source.find(p=>p.oxId===id),productLink:access.productLink};
+  const ph=await handleConversation("Non",state([mustang.id],null,"headphones"),source,adapters);
+  assert.equal(ph.products[1].sku,"HP");
+  const pa=await handleConversation("Je voudrais ajouter un deuxième micro sans fil",state([aeris.id],60000,"venue"),source,adapters);
+  assert.deepEqual(pa.products.map(p=>p.sku),[aeris.id,"UHF","JACK"]);
+  assert.match(pa.reply,/437,00/);
+});

@@ -120,11 +120,11 @@ const byFit = (a, b) => a.missing - b.missing || Number(a.compactPenalty) - Numb
   b.score - a.score || a.price - b.price;
 
 function candidatesFor(products, slot, plan) {
-  return products.filter(product => productIdentity(product, slot)).map(product => {
+  return products.filter(product => slot.candidate ? slot.candidate(product) : productIdentity(product, slot)).map(product => {
     const result = assess(product, slot, plan);
     const price = cents(product.price) ?? Infinity;
     return { ...result, price, compactPenalty: result.compact && !plan.compact,
-      score: result.score + (usable(product, plan) ? 3 : 0) };
+      score: result.score + (usable(product, plan) ? 3 : 0) + (slot.candidate && productIdentity(product, slot) ? 4 : 0) };
   }).filter(candidate => !candidate.excluded);
 }
 

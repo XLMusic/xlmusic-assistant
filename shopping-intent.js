@@ -59,7 +59,8 @@ const target = /\b(?:un|une|des|quels?|quelles?) (?:[a-z0-9]+ ){0,3}(?:guitares?
 
 export function shoppingInput(history, message) {
   const text = normalize(message);
-  const autonomous = shoppingVerb.test(text) && target.test(text) && !previousReference.test(text);
+  const autonomous = /\b(?:autre question|nouvelle demande|autre sujet|changeons de sujet)\b/.test(text) ||
+    (shoppingVerb.test(text) && target.test(text) && !previousReference.test(text));
   const messages = (autonomous ? [] : history).map(turn => ({
     role: "user",
     content: typeof turn === "string" ? turn : JSON.stringify({
@@ -120,7 +121,16 @@ export function shoppingPlan(intent, message, history, autonomous) {
     if (plan.question === "clarify") plan.question = "none";
   } else if (onlyGuitars && (plan.slots.length === 0 || plan.slots.every(slot => ["electric", "other"].includes(slot.family)))) {
     const interpreted = plan.slots.find(slot => slot.family === "electric") ?? plan.slots[0];
-    plan.slots = [{ ...defaults, ...interpreted, family: "electric", names: interpreted?.family === "electric" ? interpreted.names : [] }];
+    const brandTerms = ["Ibanez","Squier","Fender","Epiphone","Gibson","Yamaha","Prodipe","Jackson","ESP","Schecter","PRS","Cort","Gretsch"];
+    const brands = (interpreted?.brands ?? []).filter(brand => latest.includes(normalize(brand)));
+    for (const brand of brandTerms) if (!brands.some(value => normalize(value)===normalize(brand)) &&
+      ` ${latest} `.includes(` ${normalize(brand)} `)) brands.push(brand);
+    const names = (interpreted?.family === "electric" ? interpreted.names : [])
+      .filter(name=>latest.includes(normalize(name))&&!brands.some(brand=>normalize(brand)===normalize(name)) &&
+        !/^(?:guitare electrique|electrique|guitares electriques)$/.test(normalize(name)));
+    const evidence = (interpreted?.evidence ?? []).filter(term=>extraTechnical.test(normalize(term)));
+    plan.slots = [{ ...defaults, ...interpreted, family: "electric", names, brands, evidence }];
+    if (/\ben stock\b/.test(latest)) plan.inStock=true;
     if (plan.question === "clarify") plan.question = "none";
   } else if (wantsHeadphones) {
     const actual = plan.slots.find(slot => slot.family === "headphoneRig");
