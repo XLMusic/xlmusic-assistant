@@ -1,0 +1,77 @@
+const origin = "https://www.xlmusic.fr";
+const verifiedSquier = {
+  id: "037-3150-547",
+  gtin: "197955143101",
+  // The public XLMusic listing identifies this exact SKU.
+  url: origin + "/squier-sonic-stratocaster-sienna-sunburst-c2x42636242"
+};
+
+function shopProduct(value) {
+  try {
+    const url = new URL(value, origin);
+    if (url.origin !== origin || url.username || url.password) return null;
+    if (/^\/[a-z0-9-]*-c2x\d+\/?$/i.test(url.pathname)) return url.origin + url.pathname;
+    if (/^\/PBSCProduct\.asp$/i.test(url.pathname) && /^[1-9]\d*$/.test(url.searchParams.get("ItmID") ?? "")) {
+      return origin + "/PBSCProduct.asp?ItmID=" + url.searchParams.get("ItmID");
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function confirmsIdentity(html, product) {
+  const sku = String(product.id ?? "").trim().toLowerCase();
+  const gtin = String(product.gtin ?? "").trim();
+  const schema = /schema\.org\/Product|property\s*=\s*["']og:type["']\s+content\s*=\s*["']product["']|"@type"\s*:\s*"Product"/i;
+  if (!schema.test(html)) return false;
+  const identifiers = [...html.matchAll(/"(?:sku|gtin(?:8|12|13|14)?)"\s*:\s*"?([^"\s,}<]+)"?/gi)];
+  if (identifiers.some(([, value]) => [sku, gtin].filter(Boolean).includes(value.toLowerCase()))) return true;
+  const visibleText = html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ");
+  const codes = [...visibleText.matchAll(/\b(?:code|réf(?:érence)?|ean)\s*:\s*([^\n()]+)/gi)];
+  return codes.some(([, value]) => [sku, gtin].filter(Boolean).some(id => {
+    const code = value.trim().toLowerCase();
+    return code === id || code.startsWith(id + " ");
+  }));
+}
+
+export function createProductLinkVerifier(fetchImpl = fetch) {
+  const cache = new Map();
+  return async product => {
+    const isVerifiedSquier = product.id === verifiedSquier.id &&
+      (!product.gtin || product.gtin === verifiedSquier.gtin);
+    const fallback = isVerifiedSquier ? verifiedSquier.url : null;
+    const oxId = String(product.oxId ?? "");
+    let url = shopProduct(product.url || fallback ||
+      (/^[1-9]\d*$/.test(oxId) ? `${origin}/PBSCProduct.asp?ItmID=${oxId}` : ""));
+    if (!url) return fallback;
+    const key = JSON.stringify([url, product.id, product.gtin]);
+    const cached = cache.get(key);
+    if (cached?.expires > Date.now()) return cached.result;
+    const signal = AbortSignal.timeout(2500);
+    let link = null;
+    let definitivelyMissing = false;
+    try {
+      for (let redirects = 0; url && redirects <= 2; redirects++) {
+        const response = await fetchImpl(url, { redirect: "manual", signal });
+        if ([301, 302, 303, 307, 308].includes(response.status)) {
+          await response.body?.cancel();
+          const location = response.headers.get("location");
+          url = location ? shopProduct(new URL(location, url)) : null;
+          if (!url) definitivelyMissing = true;
+          continue;
+        }
+        if (response.ok && confirmsIdentity(await response.text(), product)) link = url;
+        else if (response.ok || [404, 410].includes(response.status)) definitivelyMissing = true;
+        if (!response.ok) await response.body?.cancel();
+        break;
+      }
+    } catch {
+      // A public product page can be temporarily unavailable independently of Oxatis.
+    }
+    const result = link || (!definitivelyMissing && fallback);
+    if (cache.size >= 2000) cache.delete(cache.keys().next().value);
+    cache.set(key, { result: result || null, expires: Date.now() + (link ? 3600000 : 300000) });
+    return result || null;
+  };
+}

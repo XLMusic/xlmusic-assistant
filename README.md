@@ -1,4 +1,8 @@
-# Assistant XLMusic V6
+# Assistant XLMusic
+
+La procédure de validation et de livraison de la V7 figure dans [LIVRAISON-V7.md](LIVRAISON-V7.md).
+
+## Archive V6
 
 Le service utilise le flux Google Shopping existant au démarrage. La V6 ajoute un test authentifié vers Oxatis, un import progressif et une bascule explicite vers le catalogue importé. L’intégration OpenAI et le service HTTP du chatbot restent compatibles avec la V5.
 
