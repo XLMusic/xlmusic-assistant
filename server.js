@@ -26,6 +26,8 @@ const store = process.env.DATABASE_URL ? createCatalogStore(process.env.DATABASE
 configureCatalogAdmin(app, oxatis, store);
 
 let catalog=[], catalogUpdatedAt=null, lastCatalogError=null;
+let oxatisCatalogReadAt = null;
+const oxatisCatalogMaxAge = 5 * 60_000;
 const productLink = createProductLinkVerifier();
 const clean=s=>String(s??"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim();
 const arr=x=>Array.isArray(x)?x:(x?[x]:[]);
@@ -51,10 +53,19 @@ async function loadCatalog(){
    const current = await store.current();
    catalog = current?.products ?? [];
    catalogUpdatedAt = current?.updatedAt ?? null;
+   oxatisCatalogReadAt = catalog.length ? Date.now() : null;
    lastCatalogError = catalog.length ? null : "Aucun catalogue PostgreSQL publié.";
-  } catch {
+  } catch (error) {
+   const code = error?.code;
+   console.error("Lecture du catalogue PostgreSQL impossible.",
+    typeof code === "string" && /^[A-Z0-9_]{1,32}$/.test(code) ? code : "CODE_INDISPONIBLE");
+   if (oxatisCatalogReadAt !== null && Date.now() - oxatisCatalogReadAt < oxatisCatalogMaxAge) {
+    lastCatalogError = "Lecture PostgreSQL échouée. Dernier catalogue publié utilisé.";
+    return;
+   }
    catalog = [];
    catalogUpdatedAt = null;
+   oxatisCatalogReadAt = null;
    lastCatalogError = "Catalogue Oxatis indisponible.";
   }
   return;
@@ -126,7 +137,8 @@ async function catalogStatus() {
 app.get("/health",async(_,res)=>{
  const state=await catalogStatus();
  const openAIConfigured=Boolean(process.env.OPENAI_API_KEY);
- const ready=state.count>0 && !state.error && openAIConfigured && (!useOxatis || oxatisConfigured);
+ const catalogAvailable = state.count > 0 && (useOxatis || !state.error);
+ const ready = catalogAvailable && openAIConfigured && (!useOxatis || oxatisConfigured);
  res.set("Cache-Control","no-store").status(ready?200:503).json({
   ok:ready, version:"V7", model:MODEL, catalogSource:state.source, catalogCount:state.count,
   catalogUpdatedAt:state.updatedAt, lastCatalogError:state.error,

@@ -17,13 +17,17 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
     OXATIS_APP_ID: "test", OXATIS_TOKEN: "test", OPENAI_API_KEY: "test",
     OPENAI_BASE_URL: "https://api.openai.test/v1"
   });
-  let ready = true;
+  let ready = false;
+  let published = true;
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
   let dbReads = 0;
   t.mock.method(pg.Pool.prototype, "query", async (sql, params) => {
     assert.match(sql, /^\s*SELECT\b/im);
     assert.match(sql, /stage = 'published'/);
     dbReads++;
     if (!ready) throw new Error("offline");
+    if (!published) return { rows: [] };
     const products = [{
       oxId: "42636242", id: "037-3150-547", title, productType: "Guitares électriques",
       brand: "Squier", price: "199 EUR", availability: "in stock", visible: true
@@ -71,6 +75,9 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
       req.end(payload ? JSON.stringify(payload) : undefined);
     });
   }
+  assert.equal((await http("/health")).status, 503);
+  assert.equal((await http("/api/chat", { message: request })).status, 503);
+  ready = true;
   const health = await http("/health");
   const status = await http("/api/catalog/status");
   assert.equal(health.status, 200);
@@ -82,7 +89,25 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
   assert.equal(chat.status, 200);
   assert.match(JSON.parse(chat.text).reply, /Voir|https:\/\/www\.xlmusic\.fr/);
   ready = false;
+  const degradedHealth = await http("/health");
+  const degradedStatus = JSON.parse((await http("/api/catalog/status")).text);
+  assert.equal(degradedHealth.status, 200);
+  assert.equal(JSON.parse(degradedHealth.text).catalogCount, 1);
+  assert.equal(degradedStatus.count, 1);
+  assert.equal(degradedStatus.updatedAt, "2026-11-27T09:15:24.934Z");
+  assert.equal(JSON.parse(degradedHealth.text).lastCatalogError, degradedStatus.error);
+  assert.ok(degradedStatus.error);
+  assert.equal((await http("/api/chat", { message: request })).status, 200);
+  now += 5 * 60_000;
   assert.equal((await http("/health")).status, 503);
   assert.equal(JSON.parse((await http("/api/catalog/status")).text).count, 0);
+  assert.equal((await http("/api/chat", { message: request })).status, 503);
+  ready = true;
+  assert.equal((await http("/health")).status, 200);
+  assert.equal(JSON.parse((await http("/api/catalog/status")).text).error, null);
+  published = false;
+  assert.equal((await http("/health")).status, 503);
+  assert.equal(JSON.parse((await http("/api/catalog/status")).text).count, 0);
+  assert.equal((await http("/api/chat", { message: request })).status, 503);
   assert.ok(dbReads >= 3);
 });

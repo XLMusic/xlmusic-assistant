@@ -127,12 +127,15 @@ export function createCatalogStore(connectionString, oxatis, pool = new pg.Pool(
     const { rows } = await pool.query(`
       SELECT r.id, r.updated_at,
         CASE WHEN r.id IS DISTINCT FROM $1::bigint THEN (
-          SELECT jsonb_agg(p.product) FROM xl_catalog_products p
+          SELECT COALESCE(jsonb_agg(p.product), '[]'::jsonb) FROM xl_catalog_products p
           WHERE p.run_id = r.id AND p.product IS NOT NULL
         ) END AS products
       FROM xl_catalog_runs r WHERE r.stage = 'published' ORDER BY r.id DESC LIMIT 1`, [cache?.id ?? null]);
     const row = rows[0];
-    if (!row) return null;
+    if (!row) {
+      cache = undefined;
+      return null;
+    }
     if (row.products) cache = { id: row.id, updatedAt: row.updated_at, products: row.products };
     return cache;
   }
