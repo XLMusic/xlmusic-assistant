@@ -1,0 +1,84 @@
+Déployer XLMusic Assistant V8 sur un service de test indépendant
+
+1. Préparer la branche GitHub
+
+   Décompressez xlmusic-assistant-v8.zip à côté d’un clone local propre
+   de XLMusic/xlmusic-assistant. Dans ce clone, partez de la V7 corrigée.
+
+     git status --short
+     git switch -c v8-test e3ab972
+
+   Copiez le contenu du dossier xlmusic-assistant-v8 extrait à la racine
+   de votre clone. Sur Mac, depuis la racine du clone, avec les deux
+   dossiers côte à côte :
+
+     rsync -a ../xlmusic-assistant-v8/ ./
+     git status --short
+     npm ci
+     npm test
+
+   Vérifiez que seuls les fichiers V8 figurent dans les changements.
+   Utilisez Node.js 24 et gardez les secrets hors du clone de test.
+   Lorsque vous souhaitez publier la branche de recette :
+
+     git add .
+     git diff --cached --stat
+     git diff --cached --check
+     git commit -m "Développer XLMusic Assistant V8"
+     git push -u origin v8-test
+
+   Si v8-test existe déjà sur GitHub, vérifiez son contenu avant de
+   décider où intégrer le ZIP. Conservez les branches V6 et V7.
+
+2. Créer le service Render de recette
+
+   - Dans Render, choisissez New → Web Service, puis le dépôt
+     XLMusic/xlmusic-assistant et la branche v8-test.
+   - Donnez-lui un nom propre, par exemple xlmusic-assistant-v8-test.
+     Sélectionnez Node et laissez Root Directory vide. Si vous utilisez
+     une adresse PostgreSQL interne, choisissez la région de cette base.
+   - Build Command : npm ci
+     Start Command : npm start
+     Health Check Path : /health
+   - NODE_VERSION : 24.22.1, la version utilisée pour la validation.
+     Render fournit normalement PORT.
+   - Dans les variables privées de ce seul service, renseignez
+     CATALOG_SOURCE=oxatis et DATABASE_URL. Utilisez un accès existant
+     en lecture seule au catalogue publié, avec SELECT sur
+     xl_catalog_runs et xl_catalog_products.
+   - Renseignez OPENAI_API_KEY, OPENAI_MODEL si nécessaire, ainsi que
+     OXATIS_APP_ID et OXATIS_TOKEN. Conservez les valeurs dans Render,
+     en privilégiant des identifiants dédiés à la recette si disponibles.
+   - CATALOG_ADMIN_TOKEN peut rester absent sur la V8 de recette.
+     Les routes d’administration restent alors désactivées. La lecture
+     de l’instantané ne nécessite aucun jeton d’administration.
+   - Lancez le service, puis réglez Auto-Deploy sur Off dans Settings
+     pour garder la main sur les prochains essais de la seule V8.
+
+3. Contrôler la V8
+
+   - Ouvrez /health sur le nouveau service. Attendez HTTP 200, V8,
+     source oxatis, ok: true et lastCatalogError: null.
+   - Ouvrez /api/catalog/status. Comparez le nombre et la date de
+     publication aux valeurs de /health. Attendez 2 718 produits si la
+     publication de référence est toujours celle en place.
+   - Ouvrez la page d’accueil V8 et rejouez les cinq questions du
+     rapport, enchaînez 1 et 2 dans la même conversation, puis 5 et
+     son suivi. Vérifiez les prix et les stocks à l’instant de la
+     recette et ouvrez chaque lien proposé. Vérifiez aussi la variante
+     « aucun dépassement » du cas 3.
+   - Si les fiches répondent 403 depuis Render, la V8 peut ne proposer
+     aucun produit vérifié. Confirmez la réponse du site depuis le
+     service de test et traitez l’accès aux fiches avec l’administrateur
+     de la boutique avant une mise en service.
+   - Relevez les temps de réponse et les consommations OpenAI et
+     Oxatis de la recette. En cas d’échec, continuez de servir les
+     clients depuis votre service actuel et intervenez sur la seule V8.
+
+La V8 lit la publication existante. Cette procédure ne lance ni
+migration, ni import, ni opération EBP.
+
+Documentation officielle Render
+https://render.com/docs/web-services
+https://render.com/docs/deploys
+https://render.com/docs/node-version

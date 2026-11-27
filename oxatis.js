@@ -118,6 +118,13 @@ function clean(value, limit = 200) {
   return typeof value === "string" ? value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, limit) : "";
 }
 
+function cleanDescription(value, limit) {
+  if (typeof value !== "string") return "";
+  return value.replace(/<(?:br\b[^>]*|\/(?:p|li|div|h[1-6]))>/gi, "\n")
+    .replace(/<[^>]*>/g, " ").split(/\n+/)
+    .map(line => line.replace(/\s+/g, " ").trim()).filter(Boolean).join("\n").slice(0, limit);
+}
+
 function priceTtc(price, rate) {
   const amount = number(price?.Value);
   const tax = number(rate);
@@ -132,8 +139,13 @@ export function normalizeProduct(row) {
   const reference = priceTtc(row.StrikethroughPrice, row.TaxRate);
   const stock = number(row.QuantityInStock?.Value);
   const quantity = Number.isSafeInteger(stock) ? Math.max(0, stock) : null;
+  const canOrder = quantity !== null && (quantity > 0 ||
+    (bool(row.SaleIfOutOfStock) && row.SaleIfOutOfStockScenario !== "3"));
   const available = quantity === null ? "" : quantity > 0 ? "in stock" :
-    bool(row.SaleIfOutOfStock) ? "sur commande, délai à confirmer" : "out of stock";
+    canOrder ? "sur commande, délai à confirmer" : "out of stock";
+  const daysToShip = bool(row.ShowDaysToship ?? row.ShowDaysToShip) ? integer(row.DaysToShip) : null;
+  const categories = [...new Set(Array.from({ length: 10 }, (_, index) =>
+    clean(row[`Category${index + 1}`]?.Name)).filter(Boolean))];
   const discountRulePresent = positiveId(row.DiscountRuleId?.OxID) || Boolean(clean(row.DiscountGridCode));
   const format = amount => `${amount.toFixed(2)} EUR`;
   return {
@@ -143,7 +155,12 @@ export function normalizeProduct(row) {
     published: bool(row.Visible),
     visible: bool(row.Visible) && (quantity > 0 || bool(row.ShowIfOutOfStock)),
     brand: clean(row.Brand?.Name),
-    description: clean(row.LongDescription || row.Description, 1800),
+    description: [cleanDescription(row.Description, 600), cleanDescription(row.LongDescription, 3400)]
+      .filter((value, index, all) => value && all.indexOf(value) === index).join("\n"),
+    categories,
+    canOrder,
+    daysToShip,
+    url: clean(row.UrlExternalLink, 225),
     productType: clean(row.Category1?.Name),
     gtin: clean(row.EANCode),
     price: price === null ? "" : format(price),

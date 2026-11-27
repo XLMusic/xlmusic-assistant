@@ -1,0 +1,149 @@
+XLMusic Assistant V8
+Modifications, tests et limites
+
+Base et préservation
+
+La source de départ est XLMusic-V7-Test.zip, comparée aux fichiers du
+commit e3ab972d1d3f85e58c3ba43b1319eaf2486d531a. Le stockage PostgreSQL et
+les protections d’administration sont conservés. La V8 interroge la
+publication PostgreSQL en place. Les routes /health et /api/catalog/status
+gardent leurs champs. Après une erreur PostgreSQL, le dernier catalogue
+valide reste disponible pendant cinq minutes. Le code d’erreur du pilote
+est journalisé lorsqu’il existe.
+
+Défauts identifiés dans le code V7
+
+- Le modèle recevait le dernier message et plusieurs anciennes demandes
+  sans décision explicite de continuité. Cela pouvait reporter les deux
+  articles d’un panier dans une nouvelle recherche.
+- Le moteur écartait les produits hors budget avant les contrôles Oxatis.
+  Il ne disposait donc d’aucune voie pour vérifier une alternative.
+- La famille produit pouvait être déduite du titre ou de la catégorie.
+  Un accessoire mentionnant « guitare électrique » pouvait franchir ce
+  contrôle. Une guitare compacte non demandée ne recevait aucune pénalité.
+- Les preuves techniques reposaient sur des formulations étroites.
+  Certaines solutions casque et sonos échappaient à la sélection. La V7
+  vérifiait peu de fiches puis utilisait des textes de conseil fixes.
+
+Modifications V8
+
+- Le navigateur conserve la demande d’origine, les précisions récentes,
+  les questions posées et les titres déjà proposés. L’analyse distingue
+  les demandes autonomes des suivis et ignore l’ancien panier pour une
+  nouvelle demande autonome. Un suivi peut conserver le budget et tenir
+  compte du matériel déjà possédé.
+- Les préférences de pratique, de niveau et de format orientent la
+  sélection. Les marques explicites, le stock, la famille et les
+  caractéristiques obligatoires restent des critères de validation.
+  Le candidat standard passe avant le compact pour un débutant sans
+  besoin de petit format, lorsqu’il existe une option dans le budget.
+- Les choix, titres, prix TTC, stock, visibilité, commande, délai
+  d’expédition publié et caractéristiques reposent sur une relecture
+  Oxatis. Le produit doit avoir une fiche XLMusic dont l’identité
+  principale est vérifiée par SKU ou GTIN. Une rupture vérifiée peut
+  être signalée pour un modèle précis sans en faire une offre.
+- Un panier peut couvrir jusqu’à trois articles distincts. Le serveur
+  additionne les prix TTC relus, hors livraison. Parmi les choix
+  confirmés, la V8 privilégie le budget, puis une alternative adaptée
+  au plus faible dépassement en l’absence de refus explicite.
+- OpenAI structure le besoin, puis peut arbitrer les offres admissibles
+  et sélectionner leurs arguments. Le serveur contrôle les montants,
+  les liens et les caractéristiques. Les arguments chiffrés ou
+  techniques ne reposent pas sur du texte libre du modèle.
+- Les délais affichés correspondent au délai d’expédition publié par
+  Oxatis. Le conseil extérieur reste prudent sur la portée et demande
+  la distance ou le connecteur micro quand cela change le choix.
+
+Résultats des scénarios commerciaux simulés
+
+1. « Je débute la guitare électrique, j’aime le rock et j’ai un budget
+   de 400 € pour une guitare et un ampli. Que me conseillez-vous ? »
+   Le jeu de test retient une Squier de taille standard et un ampli
+   Blackstar. Deux liens vérifiés dans la simulation, argument rock
+   et total 327 € TTC. L’Ibanez Mikro passe après le format standard.
+2. « Quelles guitares électriques de marque Ibanez ou Squier avez-vous
+   en stock à moins de 200 € ? »
+   Après le cas 1, la recherche repart sur une guitare seule. La Squier
+   à 199 € est retenue avec sa fiche. Un modèle à 200 € est exclu des
+   offres dans le budget. Ce changement de demande est testé via HTTP.
+3. « Quelles guitares électriques avez-vous en stock à moins de 150 €,
+   toutes marques confondues ? »
+   Plaque, cordes, capodastre, guitare classique et rupture sont
+   écartés. La Squier à 199 € est l’alternative vérifiée dans le jeu
+   de test, soit 49 € de plus. Avec « aucun dépassement », aucune
+   offre n’est renvoyée.
+4. « Je possède une guitare électrique Fender Stratocaster et je
+   souhaite jouer au casque sans utiliser mon ampli. Quelles solutions
+   pouvez-vous me proposer parmi vos produits en stock ? »
+   Le test retient le Fender Mustang Micro Plus à 129 € et écarte le
+   combo traditionnel malgré sa prise casque. La guitare possédée est
+   absente du panier.
+5. « Je suis chanteur et je recherche une enceinte autonome sur batterie
+   avec Bluetooth, pour chanter lors de petites prestations devant une
+   cinquantaine de personnes. Mon budget est de 600 €. Que me conseillez-vous ? »
+   Le test retient une enceinte fictive de recette à 559 € TTC avec
+   batterie, Bluetooth et entrée micro. Le délai simulé est annoncé
+   comme expédition, et le conseil demande le lieu. Au suivi
+   « En extérieur, et j’ai déjà un micro. », l’enceinte et le budget
+   sont conservés et le conseil porte sur la distance à couvrir et
+   le connecteur du micro. Une enceinte équipée seulement de micros
+   fournis ne valide pas l’entrée micro. Le suivi est aussi testé en HTTP.
+
+Autres tests
+
+Résultat sur une extraction propre du ZIP, sous Node.js 24.22.1 :
+28 tests réussis, aucun échec (14 hérités et 14 ajoutés).
+L’installation via npm ci depuis le verrou de dépendances a réussi.
+Les tests hérités couvrent notamment le démarrage sans catalogue,
+la panne PostgreSQL temporaire, la persistance durant cinq minutes,
+l’expiration et le rétablissement. Les tests ajoutés couvrent notamment
+un prix actualisé qui fait dépasser le panier, les produits interdits
+à la commande, la confirmation du lien, le rejet d’un SKU associé à
+une autre fiche, le comportement si l’arbitrage OpenAI échoue et le
+plafond de lectures Oxatis sur 2 718 fiches synthétiques.
+
+Coût, latence, sécurité et synchronisation
+
+- Une demande soumise à l’analyse utilise un appel OpenAI, puis au
+  plus un second appel si des options peuvent être conseillées. Les
+  plafonds de sortie sont 1 700 et 500 jetons. L’arbitrage peut échouer
+  sans écarter les choix déjà vérifiés.
+- La présélection limite la validation à 12 produits en deux lots de
+  six. Les fiches Oxatis ont un délai maximal de 5 s par appel. Les
+  liens ont 2,5 s et les confirmations positives sont gardées cinq
+  minutes. Avec les délais OpenAI (15 s puis 5 s), une demande
+  dégradée peut prendre plusieurs dizaines de secondes. La latence
+  et le coût réels restent à mesurer sur le service de recette.
+- Le chat conserve les plafonds de trois demandes simultanées et de
+  20 demandes par minute par instance. Ces plafonds sont partagés
+  entre visiteurs. Les messages récents sont envoyés à OpenAI pour
+  traiter le suivi. Aucun secret ne figure dans le ZIP.
+- Le catalogue PostgreSQL est un index publié. La relecture Oxatis
+  actualise les candidats existants. Un nouveau produit absent de
+  l’index ne peut pas apparaître dans les résultats. La V8 ne change
+  pas le processus de publication ni la synchronisation EBP–Oxatis.
+
+Limites et recette réelle
+
+Les prix cités dans les tests sont des données de simulation. Les
+réponses OpenAI, Oxatis et PostgreSQL sont simulées dans toute la
+suite. Aucun accès de recette réel à ces trois services n’était
+configuré ici. La requête publique vers la fiche Squier, sa route
+Oxatis de secours et le flux Google Shopping ont reçu HTTP 403 depuis
+cet environnement. Il reste à valider la réponse du site depuis Render
+et à rejouer les cinq questions avec le modèle et le catalogue réels.
+
+Les synonymes aident la recherche, mais une fiche dont le texte ne
+confirme pas une caractéristique obligatoire ou dont le lien ne peut
+être vérifié peut être écartée. La recherche réelle est bornée à
+12 fiches, donc le dépassement minimal annoncé est celui des options
+confirmées. Les paniers de plus de trois articles appellent une
+précision. Une jauge extérieure et la compatibilité d’un micro
+dépendent aussi de la distance, du bruit et de la connectique.
+
+Dépendances et environnement
+
+L’audit npm a signalé une vulnérabilité de sévérité faible dans
+l’analyseur XML hérité. fast-xml-parser a été mis à jour en 5.12.1.
+L’audit du nouveau verrou de dépendances ne signale aucune
+vulnérabilité connue. Validation cible sous Node.js 24.22.1.

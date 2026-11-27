@@ -1,4 +1,4 @@
-const normalize = value => String(value ?? "").toLowerCase().normalize("NFD")
+export const normalize = value => String(value ?? "").toLowerCase().normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 
 const patterns = {
@@ -8,7 +8,7 @@ const patterns = {
   pa: /\benceintes?\b|\b(?:sono(?:risation)?|systemes? de sonorisation) (?:portable|autonome|amplifiee?)\b/
 };
 
-const traits = {
+export const traits = {
   battery: /\b(?:sur batterie|batterie (?:integree|interne|rechargeable|lithium)|(?:fonctionnement|alimentation|fonctionne) (?:sur |par |avec )?(?:piles?|batterie))\b/,
   bluetooth: /\bbluetooth\b/,
   headphone: /\b(?:(?:sortie|prise|jack) (?:pour )?casque|ampli casque)\b/,
@@ -17,7 +17,7 @@ const traits = {
 
 const personalGuitarAmp = /\bamplificateur (?:de|pour) guitare personnel\b/;
 const directGuitar = /\b(?:directement (?:dans|sur|a|a la|au) (?:la |votre )?guitare|directement (?:sur|dans) (?:la |votre )?prise jack)\b/;
-const isStock = product => ["in stock", "in_stock"].includes(product.availability);
+export const isStock = product => ["in stock", "in_stock"].includes(product.availability);
 
 const clarification = "Vous pouvez me préciser le matériel recherché et les critères indispensables ?";
 const stringList = { type: "array", items: { type: "string" } };
@@ -54,7 +54,7 @@ maxCents est le budget total TTC en centimes, même pour un ensemble. exclusive 
 inStock est vrai si le stock est impératif. Utilise question uniquement si une réponse change le conseil, et ne repose pas une question déjà répondue.
 Ne produis ni conseil, ni produit, ni prix. Retourne seulement l'intention structurée.`;
 
-function cents(value) {
+export function cents(value) {
   const match = String(value ?? "").trim().match(/^(\d+(?:[ .\u00a0\u202f]\d{3})*)(?:[,.](\d{1,2}))?\s*(?:EUR|€)?$/i);
   if (!match) return null;
   const result = Number(match[1].replace(/\D/g, "")) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
@@ -66,8 +66,8 @@ function withExplicitBudget(plan, message) {
   const qualified = new RegExp(`(moins de|en dessous de|inférieur à|au maximum|maximum(?: de)?|jusqu['’]à|budget(?: total| global)?(?: de| à| est de)?|autour de|pas plus de)\\s*(${amount})\\s*(?:€|euros?\\b|eur\\b)`, "giu");
   const ceiling = [...message.matchAll(qualified)].at(-1);
   const amounts = [...message.matchAll(new RegExp(`(${amount})\\s*(?:€|euros?\\b|eur\\b)`, "giu"))];
-  // Defer to the structured budget when the message includes several monetary amounts.
-  if (amounts.length !== 1 || !ceiling) return plan;
+  // Defer when different amounts may represent different budgets.
+  if (!ceiling || new Set(amounts.map(match => cents(match[1]))).size !== 1) return plan;
   return { ...plan, maxCents: cents(ceiling[2]), exclusive: /moins de|en dessous|inférieur/i.test(ceiling[1]) };
 }
 
@@ -104,7 +104,7 @@ function confirms(product, pattern) {
     (pattern !== traits.battery || !/\b(?:sans batterie|sur secteur uniquement|uniquement sur secteur|batterie non incluse)\b/.test(normalize(product.description)));
 }
 
-function familyMatches(product, slot) {
+export function familyMatches(product, slot) {
   const title = normalize(product.title);
   const category = normalize(product.productType);
   const identity = [title, category, normalize(product.id), normalize(product.gtin)];
@@ -145,7 +145,7 @@ function fit(product, slot, plan) {
   return { product, price, score: (stock ? 10 : 0) + preference - (complexBridge ? 4 : 0) };
 }
 
-function within(price, { maxCents, exclusive }) {
+export function within(price, { maxCents, exclusive }) {
   return maxCents === null || (exclusive ? price < maxCents : price <= maxCents);
 }
 
@@ -170,7 +170,7 @@ function compare(a, b) {
   return b.score - a.score || a.price - b.price;
 }
 
-const questions = {
+export const questions = {
   venue: "Vos prestations ont-elles lieu surtout en intérieur ou en extérieur ?",
   microphone: "Avez-vous déjà un micro pour vos prestations ?",
   headphones: "Avez-vous déjà un casque filaire ?",
@@ -180,7 +180,7 @@ const questions = {
 };
 
 const euro = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
-const money = value => euro.format(value / 100);
+export const money = value => euro.format(value / 100);
 
 export async function recommend(products, plan, { readLive, productLink = async () => null } = {}) {
   if (!plan.slots.length || plan.slots.length > 2 || plan.question === "clarify" ||
