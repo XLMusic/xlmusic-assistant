@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { advise } from "../advisor.js";
+import { advise, adviseExactProduct } from "../advisor.js";
 import { normalizeProduct } from "../oxatis.js";
 import { createProductLinkVerifier } from "../product-links.js";
 import { shoppingInput, shoppingPlan } from "../shopping-intent.js";
@@ -147,7 +147,9 @@ test("V8 — le prix, le stock, les preuves techniques et le lien estimés ne va
   const badLink = await advise([squier], shopping, {
     ...services, productLink: createProductLinkVerifier(async () => new Response("Accès refusé", { status: 403 }), { strict: true })
   });
-  assert.deepEqual(badLink.products, []);
+  assert.deepEqual(titles(badLink), [squier.title]);
+  assert.equal(badLink.products[0].url, null);
+  assert.doesNotMatch(badLink.reply, /https?:|\bnull\b/);
   const unreliable = await advise([portable], plan(intent([slot("pa")]), singer), {
     ...services, readLive: async () => ({ ...portable, description: "Bluetooth. Entrée micro. Batterie non incluse." })
   });
@@ -239,4 +241,29 @@ test("V8 — le volume des appels Oxatis reste plafonné sur un catalogue de 2 7
   });
   assert.equal(checks, 12);
   assert.equal(result.products[0].title, large[0].title);
+});
+
+test("le Mustang est trouvé par SKU ou par nom, même sans lien", async () => {
+  const candidate = { ...mustang, id: "231-1600-000", title: "Fender, Mustang® Micro Plus" };
+  const access = { readLive: async () => candidate, productLink: async () => { throw new Error("réseau"); } };
+  for (const message of [candidate.id, "Avez-vous le Fender Mustang Micro Plus en stock et à quel prix ?"]) {
+    const result = await adviseExactProduct([candidate], message, access);
+    assert.deepEqual(titles(result), [candidate.title]);
+    assert.equal(result.products[0].url, null);
+    assert.match(result.reply, /129,00.*en stock/);
+    assert.match(result.reply, /231-1600-000/);
+  }
+  assert.equal(await adviseExactProduct([candidate], "Je cherche un ampli à 400 €", access), null);
+  const hidden = await adviseExactProduct([candidate], candidate.id, {
+    ...access, readLive: async () => ({ ...candidate, visible: false })
+  });
+  assert.deepEqual(hidden.products, []);
+});
+
+test("un panier reste disponible lorsqu’un lien ne peut être confirmé", async () => {
+  const result = await advise([squier, amp], plan(intent([slot("electric"), slot("amp")]), guitarAndAmp), {
+    ...services, productLink: async () => null
+  });
+  assert.deepEqual(titles(result), [squier.title, amp.title]);
+  assert.match(result.reply, /327,00/);
 });

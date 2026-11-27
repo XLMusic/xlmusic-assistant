@@ -3,7 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import { shoppingFormat, shoppingInstructions, shoppingInput, shoppingPlan } from "./shopping-intent.js";
-import { adviceFormat, adviceInstructions, advise } from "./advisor.js";
+import { adviceFormat, adviceInstructions, advise, adviseExactProduct } from "./advisor.js";
 import { createProductLinkVerifier } from "./product-links.js";
 import { XMLParser } from "fast-xml-parser";
 import { createOxatis } from "./oxatis.js";
@@ -180,6 +180,9 @@ app.post("/api/chat",async(req,res)=>{
   if(useOxatis || !catalog.length) await refreshCatalog();
   if(!catalog.length)return res.status(503).json({error:"Je ne peux pas vérifier les produits pour le moment. Réessayez dans un instant."});
   const snapshot=catalog;
+  const catalogServices = { readLive: oxatisConfigured ? oxatis.product : undefined, productLink };
+  const exact = await adviseExactProduct(snapshot, message, catalogServices);
+  if (exact) return res.json(exact);
   const boundedText = (value, limit) => typeof value === "string" && value.length <= limit ? clean(value) : "";
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-4).flatMap(item => {
    if (typeof item === "string") {
@@ -204,8 +207,7 @@ app.post("/api/chat",async(req,res)=>{
   }
   const plan = shoppingPlan(JSON.parse(response.output_text), message, history, autonomous);
   const result = await advise(snapshot, plan, {
-   readLive: oxatisConfigured ? oxatis.product : undefined,
-   productLink,
+   ...catalogServices,
    choose: async options => {
     const advice = await client.responses.create({
      model:MODEL, reasoning:{effort:"low"}, max_output_tokens:500,

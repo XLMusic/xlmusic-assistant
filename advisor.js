@@ -131,7 +131,7 @@ function shortlist(products, plan) {
 
 function matchingSets(products, plan) {
   const groups = plan.slots.map(slot => products.flatMap(({ product, url }) => {
-    if (!url || !usable(product, plan) || !productIdentity(product, slot)) return [];
+    if (!usable(product, plan) || !productIdentity(product, slot)) return [];
     const price = cents(product.price);
     if (price === null) return [];
     const item = assess(product, slot, plan);
@@ -229,7 +229,7 @@ export async function advise(products, plan, { readLive, productLink, choose } =
     return { reply: questions.clarify, products: [], followUp: questions.clarify };
   }
   const verified = [];
-  const candidates = readLive && productLink ? shortlist(products, plan) : [];
+  const candidates = readLive ? shortlist(products, plan) : [];
   const unavailable = new Set();
   const requestedNames = plan.slots.length === 1 ? plan.slots[0].names.map(normalize) : [];
   for (let offset = 0; offset < candidates.length; offset += liveBatch) {
@@ -246,8 +246,13 @@ export async function advise(products, plan, { readLive, productLink, choose } =
         const fit = assess(fresh, slot, plan);
         return !fit.missing && !fit.excluded;
       })) return null;
-      const url = await productLink({ ...fresh, url: fresh.url || candidate.url });
-      return url ? { product: fresh, url } : null;
+      let url = null;
+      try {
+        url = await productLink?.({ ...fresh, url: fresh.url || candidate.url }) || null;
+      } catch {
+        // A shop page failure does not invalidate the commercial data from Oxatis.
+      }
+      return { product: fresh, url };
     }));
     verified.push(...batch.flatMap(result => result.status === "fulfilled" && result.value ? [result.value] : []));
   }
@@ -278,13 +283,15 @@ export async function advise(products, plan, { readLive, productLink, choose } =
   const selectedIndex = Number.isInteger(decision?.option) && priced[decision.option] ? decision.option : 0;
   const selected = priced[selectedIndex];
   const result = selected.items.map(({ product, price, url }) => ({
-    title: product.title, price: money(price), availability: availabilityOf(product), url
+    title: product.title, sku: product.id, price: money(price), availability: availabilityOf(product), url
   }));
   const lines = result.map((item, index) => {
     const optionsForItem = options[selectedIndex].items[index].benefits;
     const benefitIndex = decision?.benefits?.[index];
     const benefit = (Number.isInteger(benefitIndex) ? optionsForItem[benefitIndex] : null) ?? optionsForItem[0];
-    return `• ${item.title} — ${item.price} TTC, ${item.availability}.\n${benefit}\n${item.url}`;
+    const reference = item.sku ? `Réf. ${item.sku}` : null;
+    return [`• ${item.title} — ${item.price} TTC, ${item.availability}.`, reference, benefit, item.url]
+      .filter(Boolean).join("\n");
   });
   if (selected.items.some(({ product }) => product.discountRulePresent)) {
     lines.push("Une remise éventuelle est à confirmer sur la boutique.");
@@ -302,4 +309,29 @@ export async function advise(products, plan, { readLive, productLink, choose } =
     ? "Votre micro est déjà prévu. Quel connecteur utilise-t-il ? Je pourrai vous préciser le branchement." : null;
   return { reply: [opening, lines.join("\n\n"), ownMic, question].filter(Boolean).join("\n\n"),
     products: result, followUp: [ownMic, question].filter(Boolean).join(" ") || null };
+}
+
+export async function adviseExactProduct(products, message, services) {
+  const text = normalize(message);
+  const name = text.replace(/^(?:bonjour )?(?:avez vous|est ce que vous avez) (?:le |la |l |les )?/, "")
+    .replace(/(?: en stock)? et a quel prix$| en stock$/, "");
+  const sku = /^[a-z0-9][a-z0-9._/-]*$/i.test(message) && /[0-9]/.test(message);
+  const matches = products.filter(product => sku
+    ? normalize(product.id) === text
+    : normalize(product.title) === name);
+  if (matches.length !== 1 || !matches[0].id || !services.readLive) return null;
+  const candidate = matches[0];
+  const plan = {
+    slots: [{ family: "other", names: [candidate.id], brands: [], required: [],
+      evidence: [], excluded: [], preferred: [] }],
+    maxCents: null, exclusive: false, inStock: false, question: "none", allowOverBudget: true
+  };
+  const result = await advise([candidate], plan, {
+    ...services,
+    readLive: async id => {
+      const product = await services.readLive(id);
+      return product && normalize(product.id) === normalize(candidate.id) ? product : null;
+    }
+  });
+  return { ...result, contextMode: "new" };
 }

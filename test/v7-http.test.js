@@ -30,6 +30,7 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
   let now = Date.now();
   t.mock.method(Date, "now", () => now);
   let dbReads = 0;
+  let openAIRequests = 0;
   let includeSpeaker = false;
   t.mock.method(pg.Pool.prototype, "query", async (sql, params) => {
     assert.match(sql, /^\s*SELECT\b/im);
@@ -49,6 +50,7 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
   t.mock.method(globalThis, "fetch", async (url, options) => {
     const { hostname } = new URL(url);
     if (hostname === "api.openai.test") {
+      openAIRequests++;
       const body = JSON.parse(options.body);
       assert.equal(body.text.format.strict, true);
       const isAdvice = body.text.format.name === "xlmusic_v8_conseil";
@@ -134,6 +136,14 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
   assert.equal(JSON.parse(chat.text).contextMode, "new");
   assert.equal(JSON.parse(chat.text).products.length, 1);
   assert.match(JSON.parse(chat.text).reply, /Voir|https:\/\/www\.xlmusic\.fr/);
+  const beforeExact = openAIRequests;
+  const bySku = await http("/api/chat", { message: "037-3150-547" });
+  assert.equal(bySku.status, 200);
+  assert.equal(JSON.parse(bySku.text).products[0].title, title);
+  const byName = await http("/api/chat", { message: `Avez-vous le ${title} en stock et à quel prix ?` });
+  assert.equal(byName.status, 200);
+  assert.equal(JSON.parse(byName.text).products[0].sku, "037-3150-547");
+  assert.equal(openAIRequests, beforeExact);
   ready = false;
   const degradedHealth = await http("/health");
   const degradedStatus = JSON.parse((await http("/api/catalog/status")).text);
