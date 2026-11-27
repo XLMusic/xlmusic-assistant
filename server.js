@@ -19,6 +19,10 @@ const FEED_URL=process.env.CATALOG_FEED_URL||"https://www.xlmusic.fr/Data/Google
 app.use(express.json({limit:"20kb"}));
 app.use(cors());
 app.disable("x-powered-by");
+const revision = process.env.RENDER_GIT_COMMIT;
+if (/^[a-f0-9]{40}$/.test(revision ?? "")) {
+ app.use((_,res,next)=>{ res.set("X-XLMusic-Revision",revision); next(); });
+}
 
 const useOxatis = process.env.CATALOG_SOURCE === "oxatis";
 const oxatisConfigured = Boolean(process.env.OXATIS_APP_ID && process.env.OXATIS_TOKEN);

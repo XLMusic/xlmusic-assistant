@@ -9,7 +9,7 @@ const accessoryUse = /\b(?:pickguard|cordes|capodastre|plaque|coque|housse|etui|
 const electricAccessory = /\b(?:light cases?|stag(?:e)? cases?|guitar strings?|strings? for (?:electric )?guitars?|string sets?|pickguards?|pickup covers?|guitar (?:case|bag|strap|stand)|tuning machines?|housses?|etuis?|cordes? pour guitare)\b/;
 const explicitElectric = /\bguitares? electriques?\b/;
 const classicAcousticOrBass = /\b(?:guitares? classiques?|guitares? acoustiques?|basses? electriques?)\b/;
-const compactGuitar = /\b(?:mikro|mini strat(?:ocaster)?|short scale|petit diapason|taille reduite|format reduit|guitare de voyage|guitare pour enfant|3 4|7 8)\b/;
+const compactGuitar = /\b(?:mikro|mini strat(?:ocaster)?|(?:st )?junior|short scale|petit diapason|taille reduite|format reduit|guitare de voyage|guitare pour enfant|3 4|7 8)\b/;
 const traditionalAmp = /\b(?:combo|tete d ampli|ampli(?:ficateur)? (?:a lampes|a transistors))\b/;
 const personalAmp = /\b(?:ampli casque|ampli(?:ficateur)? (?:de |pour )?casque|amplificateur (?:de|pour) guitare personnel|ampli(?:ficateur)? (?:pour )?guitare (?:au|pour) casque|amplug|mustang micro(?: plus)?)\b/;
 const signalProcessor = /\b(?:multi effets?|modeliseurs?|processeurs? d effets?)\b/;
@@ -119,7 +119,7 @@ function candidatesFor(products, slot, plan) {
   return products.filter(product => productIdentity(product, slot)).map(product => {
     const result = assess(product, slot, plan);
     const price = cents(product.price) ?? Infinity;
-    return { ...result, price, compactPenalty: result.compact && plan.beginner && !plan.compact,
+    return { ...result, price, compactPenalty: result.compact && !plan.compact,
       score: result.score + (usable(product, plan) ? 3 : 0) };
   }).filter(candidate => !candidate.excluded);
 }
@@ -170,17 +170,18 @@ function matchingSets(products, plan) {
         score: set.score + item.score, compact: set.compact + Number(item.compact) })));
   }
   const affordable = sets.filter(set => within(set.price, plan));
-  const byAdvice = (a, b) => (plan.beginner && !plan.compact ? a.compact - b.compact : 0) ||
+  const byAdvice = (a, b) => (!plan.compact ? a.compact - b.compact : 0) ||
     b.score - a.score || a.price - b.price;
   if (affordable.length) {
     const sorted = affordable.sort(byAdvice);
     const best = sorted[0];
     return { overBudget: false, priced: sorted
-      .filter(set => !(plan.beginner && !plan.compact) || set.compact === best.compact).slice(0, 5) };
+      .filter(set => plan.compact || set.compact === best.compact).slice(0, 5) };
   }
   if (!plan.allowOverBudget || plan.maxCents === null || !sets.length) return { overBudget: false, priced: [] };
-  const sorted = sets.sort((a, b) => a.price - b.price || byAdvice(a, b));
-  return { overBudget: true, priced: sorted.filter(set => set.price === sorted[0].price).slice(0, 3) };
+  const sorted = sets.sort((a, b) => (!plan.compact ? a.compact - b.compact : 0) || a.price - b.price || byAdvice(a, b));
+  return { overBudget: true, priced: sorted
+    .filter(set => set.price === sorted[0].price && (plan.compact || set.compact === sorted[0].compact)).slice(0, 3) };
 }
 
 const explanations = {
@@ -207,7 +208,7 @@ function benefitsFor(item, plan) {
     : family === "headphoneRig" ? ["headphone", "simpleControls"]
     : family === "amp" ? ["gain", "simpleControls", "portable"] : ["pickup", "simpleControls", "portable"];
   const benefits = priority.filter(fact => proved.has(fact)).map(fact => explanations[fact]);
-  if (family === "electric" && plan.beginner && !plan.compact) {
+  if (family === "electric" && (plan.beginner || compact) && !plan.compact) {
     benefits.unshift(compact
       ? "Le format compact est une particularité à essayer avant l’achat, surtout si vous visez une guitare de taille standard."
       : "Pour débuter le rock, commencez par un son clair pour travailler la précision des accords, puis ajoutez de la saturation à l’ampli.");

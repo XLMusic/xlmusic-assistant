@@ -74,6 +74,7 @@ const redundantTrait = {
   microphone: /^(?:entree|prise|connexion|branchement) (?:(?:pour |d un |de )?)(?:un )?(?:micro|microphone)(?: (?:compatible|pour (?:le )?chant))?$/,
   headphone: /^(?:sortie|prise|jack) (?:pour )?(?:le )?casque(?: (?:filaire|stereo))?$/
 };
+const extraTechnical = /\b(?:xlr|jack|usb|humbuckers?|single coils?|simples? bobinages?|micros? doubles?|micros? simples?|diapason|vibrato|lampes|transistors|impermeab\w*|ip[0-9]+|[0-9]+ (?:cordes|watts?|w|kg|heures?|pouces?))\b/;
 const guitarCompatibility = /^(?:(?:compatib(?:le|ilite)(?: avec)?|adapte(?:e)?|pour) (?:avec |a )?(?:une |la )?)?guitare electrique$/;
 
 const acceptsOverage = /\b(?:je peux depasser|j accepte (?:un |de )?depassement|je peux (?:mettre|ajouter) plus|budget flexible)\b/;
@@ -97,14 +98,20 @@ export function shoppingPlan(intent, message, history, autonomous) {
   const latest = normalize(message);
   const explicitPair = /\b(?:une guitare(?: electrique)? et (?:un |l )ampli|un ampli et une guitare(?: electrique)?)\b/.test(latest) &&
     /\b(?:electrique|rock|metal)\b/.test(latest) &&
-    !/\b(?:sans ampli|je possede|j ai deja|casque|guitare acoustique|guitare classique)\b/.test(latest);
+    !/\b(?:sans ampli|je possede|j ai deja|casque|cable|housse|pedales?|sangle|accessoires?|guitare acoustique|guitare classique)\b/.test(latest);
   const onlyGuitars = /\b(?:quelles?|cherche|recherche|avez vous|conseill(?:ez|er))\b.*\bguitares? electriques?\b/.test(latest) &&
     !/\b(?:ampli|casque|cordes|capodastre|housse|pedale|je possede|j ai deja|accessoires?)\b/.test(latest);
   const wantsHeadphones = /\b(?:jouer|jeu) au casque\b/.test(latest) &&
     /\bsans (?:utiliser )?(?:(?:mon|l|un|d) )?ampli(?:ficateur)?\b/.test(latest);
   const defaults = { names: [], brands: [], required: [], evidence: [], excluded: [], preferred: [] };
-  if (explicitPair && !plan.slots.some(slot => !["electric", "amp", "other"].includes(slot.family))) {
-    plan.slots = ["electric", "amp"].map(family => plan.slots.find(slot => slot.family === family) ?? { ...defaults, family });
+  if (explicitPair) {
+    plan.slots = ["electric", "amp"].map(family => {
+      const slot = plan.slots.find(item => item.family === family) ?? { ...defaults, family };
+      const mentioned = terms => terms.filter(term => normalize(term) && latest.includes(normalize(term)));
+      return { ...slot, required: [], names: mentioned(slot.names), brands: mentioned(slot.brands),
+        excluded: mentioned(slot.excluded),
+        evidence: mentioned(slot.evidence).filter(term => extraTechnical.test(normalize(term))) };
+    });
     if (plan.question === "clarify") plan.question = "none";
   } else if (onlyGuitars && (plan.slots.length === 0 || plan.slots.every(slot => ["electric", "other"].includes(slot.family)))) {
     const interpreted = plan.slots.find(slot => slot.family === "electric") ?? plan.slots[0];
@@ -124,8 +131,10 @@ export function shoppingPlan(intent, message, history, autonomous) {
     !/\b(?:sans bluetooth|plus besoin de bluetooth|pas besoin de bluetooth|sur secteur uniquement|sans batterie)\b/.test(latest);
   if (explicitPortablePA) {
     const actual = plan.slots.find(slot => slot.family === "pa") ?? defaults;
-    const evidence = actual.evidence.filter(term => context.includes(normalize(term)));
-    plan.slots = [{ ...actual, family: "pa", required: ["battery", "bluetooth", "microphone"], evidence }];
+    const mentioned = terms => terms.filter(term => normalize(term) && context.includes(normalize(term)));
+    const evidence = mentioned(actual.evidence).filter(term => extraTechnical.test(normalize(term)));
+    plan.slots = [{ ...actual, family: "pa", required: ["battery", "bluetooth", "microphone"],
+      names: mentioned(actual.names), brands: mentioned(actual.brands), excluded: mentioned(actual.excluded), evidence }];
     if (plan.question === "clarify") plan.question = "venue";
   }
   const audience = /\b(?:cinquantaine|50) (?:de )?(?:personnes|spectateurs)\b/.test(context);
