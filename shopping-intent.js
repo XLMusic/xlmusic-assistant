@@ -87,10 +87,21 @@ export function shoppingPlan(intent, message, history, autonomous) {
   const explicitPair = /\b(?:une guitare(?: electrique)? et (?:un |l )ampli|un ampli et une guitare(?: electrique)?)\b/.test(latest) &&
     /\b(?:electrique|rock|metal)\b/.test(latest) &&
     !/\b(?:sans ampli|je possede|j ai deja|casque|guitare acoustique|guitare classique)\b/.test(latest);
+  const onlyGuitars = /\b(?:quelles?|cherche|recherche|avez vous|conseill(?:ez|er))\b.*\bguitares? electriques?\b/.test(latest) &&
+    !/\b(?:ampli|casque|cordes|capodastre|housse|pedale|je possede|j ai deja|accessoires?)\b/.test(latest);
+  const wantsHeadphones = /\b(?:jouer|jeu) au casque\b/.test(latest) &&
+    /\bsans (?:utiliser )?(?:(?:mon|l|un|d) )?ampli(?:ficateur)?\b/.test(latest);
+  const defaults = { names: [], brands: [], required: [], evidence: [], excluded: [], preferred: [] };
   if (explicitPair && !plan.slots.some(slot => !["electric", "amp", "other"].includes(slot.family))) {
-    const defaults = { names: [], brands: [], required: [], evidence: [], excluded: [], preferred: [] };
     plan.slots = ["electric", "amp"].map(family => plan.slots.find(slot => slot.family === family) ?? { ...defaults, family });
     if (plan.question === "clarify") plan.question = "none";
+  } else if (onlyGuitars && (plan.slots.length === 0 || plan.slots.every(slot => ["electric", "other"].includes(slot.family)))) {
+    const interpreted = plan.slots.find(slot => slot.family === "electric") ?? plan.slots[0];
+    plan.slots = [{ ...defaults, ...interpreted, family: "electric", names: interpreted?.family === "electric" ? interpreted.names : [] }];
+    if (plan.question === "clarify") plan.question = "none";
+  } else if (wantsHeadphones && !plan.slots.some(slot => slot.family === "headphoneRig")) {
+    plan.slots = [{ ...defaults, family: "headphoneRig", required: ["headphone"] }];
+    if (plan.question === "clarify") plan.question = "headphones";
   }
   const context = normalize(relevant.join(" "));
   const outdoor = /\ben exterieur\b/.test(latest) && !/\bpas en exterieur\b/.test(latest)

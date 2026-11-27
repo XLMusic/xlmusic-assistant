@@ -318,3 +318,23 @@ test("le flux public confirme le lien du Mustang lorsque la boutique bloque la l
     {strict:true,indexedFallback:true});
   assert.equal(await missing(product), null);
 });
+
+test("un jeu de cordes nommé en anglais ne peut jamais remplir le panier guitare", async () => {
+  const strings = product("888", "Fender, Yngwie Malmsteen Signature Electric Guitar Strings", 12, {
+    productType: "Guitares - Amplis - Effets - Accessoires > Guitares électriques"
+  });
+  const choices = [strings, squier, amp];
+  const api = {readLive:async id=>choices.find(item=>item.oxId===id),productLink:async()=>null};
+  const basket = await advise(choices, plan(intent([slot("electric"),slot("amp")]), guitarAndAmp), api);
+  assert.deepEqual(titles(basket), [squier.title,amp.title]);
+  const low = await advise(choices, plan(intent([slot("other")]), lowBudget), api);
+  assert.deepEqual(titles(low), [squier.title]);
+  assert.match(low.reply, /49,00/);
+});
+
+test("un Mustang décrit par son raccordement à des écouteurs ou un casque est reconnu", async () => {
+  const fender = {...mustang, description: "Il suffit de connecter une paire d’écouteurs ou un casque."};
+  const shopping = plan(intent([slot("amp")]), headphones);
+  const result = await advise([fender], shopping, {readLive:async()=>fender,productLink:async()=>null});
+  assert.deepEqual(titles(result), [fender.title]);
+});

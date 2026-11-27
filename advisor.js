@@ -6,6 +6,7 @@ const liveBatch = 6;
 const accessoryCategories = /\b(?:accessoires?|pieces? detachees?)\b/;
 const accessoryTitle = /^(?:[a-z0-9]+ ){0,2}(?:pickguards?|plaques? (?:de protection|de guitare)|cordes|jeux? de cordes|capos?|capodastres?|potentiometres?|chevalets?|micros? pour guitare|mediators?|sangles?|etuis?|housses?|supports?|pieds?|alimentations?|batterie de rechange)\b/;
 const accessoryUse = /\b(?:pickguard|cordes|capodastre|plaque|coque|housse|etui|support|pied|alimentation) (?:pour|de remplacement)\b/;
+const electricAccessory = /\b(?:guitar strings?|strings? for (?:electric )?guitars?|string sets?|pickguards?|pickup covers?|guitar (?:case|bag|strap|stand)|tuning machines?|housses?|etuis?|cordes? pour guitare)\b/;
 const explicitElectric = /\bguitares? electriques?\b/;
 const classicAcousticOrBass = /\b(?:guitares? classiques?|guitares? acoustiques?|basses? electriques?)\b/;
 const compactGuitar = /\b(?:mikro|mini strat(?:ocaster)?|short scale|petit diapason|taille reduite|format reduit|guitare de voyage|guitare pour enfant|3 4|7 8)\b/;
@@ -16,7 +17,7 @@ const signalProcessor = /\b(?:multi effets?|modeliseurs?|processeurs? d effets?)
 const facts = {
   battery: /\b(?:sur batterie|fonctionne(?:ment)? (?:sur|avec|par) batterie|batterie (?:interne|integree|rechargeable)|alimentation (?:par|sur) batterie|battery powered|built in battery)\b/,
   bluetooth: /\bbluetooth\b/,
-  headphone: /\b(?:ampli casque|amplificateur (?:de|pour) casque|(?:sortie|prise|jack) (?:pour )?(?:le )?casque|headphone (?:output|jack)|sortie (?:stereo )?mini jack (?:pour )?casque|branch(?:er|ez) (?:un|votre) casque)\b/,
+  headphone: /\b(?:ampli casque|amplificateur (?:de|pour) casque|(?:sortie|prise|jack) (?:pour )?(?:le )?casque|headphone (?:output|jack)|sortie (?:stereo )?mini jack (?:pour )?casque|branch(?:er|ez) (?:un|votre) casque|connect(?:er|ez) (?:une paire d ecouteurs ou )?(?:un|votre) casque|(?:une paire d )?ecouteurs ou un casque)\b/,
   microphone: /\b(?:entrees?|prises?|canaux?) (?:combo )?(?:xlr (?:et |ou )?)?(?:pour )?(?:micro(?:phones?)?(?:phone)?|mic)\b|\b(?:micro(?:phones?)?|mic) (?:input|in)\b|\b(?:entrees?|prises?) (?:micro ligne|combo xlr(?: jack)?|xlr (?:micro|mic))\b/,
   pickup: /\b(?:micros? (?:doubles?|humbuckers?)|humbuckers?)\b/,
   simpleControls: /\b(?:commandes simples|prise en main (?:simple|facile)|facile a utiliser|interface intuitive)\b/,
@@ -52,7 +53,8 @@ function productIdentity(product, slot) {
   const guitarPosition = title.search(explicitElectric);
   if (accessoryUse.test(title) || (accessoryPrefix &&
       (guitarPosition < 0 || guitarPosition >= accessoryPrefix.length))) return false;
-  if (slot.family === "electric" && (classicAcousticOrBass.test(title) ||
+  if (slot.family === "electric" && (electricAccessory.test(title.split(/\b(?:avec|with|livree?)\b/)[0]) ||
+      classicAcousticOrBass.test(title) ||
       /\b(?:pack|combo|ampli|amplificateur)\b/.test(title))) return false;
   if (slot.names.length && !slot.names.some(name =>
     [title, category, normalize(product.id), normalize(product.gtin), normalize(product.oxId)]
