@@ -34,14 +34,17 @@ export function validateWindow(start, end) {
 }
 
 export function createOxatis({ appId, token, fetchImpl = fetch }) {
+  const applicationId = appId?.trim();
+  const accessToken = token?.trim();
+
   async function call(method, data = "") {
-    if (!methods.has(method) || !appId || !token) throw new OxatisError("oxatis_configuration");
+    if (!methods.has(method) || !applicationId || !accessToken) throw new OxatisError("oxatis_configuration");
     let xml;
     try {
       const response = await fetchImpl(endpoint, {
         method: "POST",
         redirect: "error",
-        body: new URLSearchParams({ AppId: appId, Token: token, Method: method, Data: data }),
+        body: new URLSearchParams({ AppId: applicationId, Token: accessToken, Method: method, Data: data }),
         signal: AbortSignal.timeout(5000)
       });
       if (!response.ok) throw new OxatisError("oxatis_http", response.status);
@@ -54,7 +57,8 @@ export function createOxatis({ appId, token, fetchImpl = fetch }) {
     if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(xml) || XMLValidator.validate(xml) !== true) {
       throw new OxatisError("oxatis_xml");
     }
-    const result = parser.parse(xml).DataResultService;
+    const parsed = parser.parse(xml);
+    const result = parsed.DataResultService ?? parsed.ResultService;
     if (result?.StatusCode === "500" && result.StatusSubCode === "1001" && method === "ProductGet") {
       return null;
     }

@@ -229,6 +229,7 @@ export async function advise(products, plan, { readLive, productLink, choose } =
     return { reply: questions.clarify, products: [], followUp: questions.clarify };
   }
   const verified = [];
+  let verificationFailed = false;
   const candidates = readLive ? shortlist(products, plan) : [];
   const unavailable = new Set();
   const requestedNames = plan.slots.length === 1 ? plan.slots[0].names.map(normalize) : [];
@@ -254,13 +255,21 @@ export async function advise(products, plan, { readLive, productLink, choose } =
       }
       return { product: fresh, url };
     }));
+    for (const result of batch) {
+      if (result.status !== "rejected") continue;
+      verificationFailed = true;
+      const status = result.reason?.status;
+      console.warn("Échec de la vérification Oxatis.", Number.isInteger(status) ? status : "sans statut");
+    }
     verified.push(...batch.flatMap(result => result.status === "fulfilled" && result.value ? [result.value] : []));
   }
 
   const { overBudget, priced } = matchingSets(verified, plan);
   const question = followUp(plan);
   if (!priced.length) {
-    const opening = plan.maxCents === null ? "Je n’ai pas pu confirmer de modèle qui réunit vos critères."
+    const opening = verificationFailed
+      ? "Je ne peux pas vérifier le prix et la disponibilité pour le moment. Réessayez plus tard."
+      : plan.maxCents === null ? "Je n’ai pas pu confirmer de modèle qui réunit vos critères."
       : `Je n’ai pas pu confirmer de solution adaptée dans votre budget de ${money(plan.maxCents)}.`;
     const soldOut = [...unavailable].map(title => `${title} est actuellement indisponible.`);
     return { reply: [...(soldOut.length ? soldOut : [opening]), question].filter(Boolean).join("\n\n"),

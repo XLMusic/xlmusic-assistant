@@ -66,3 +66,9 @@ test("separates TTC, reference price, conditional discounts, and stock visibilit
   assert.equal(normalizeProduct({ ...row, QuantityInStock: {} }).quantity, null);
   assert.equal(normalizeProduct({ ...row, TaxRate: "" }).price, "");
 });
+
+test("conserve le statut des réponses d’erreur ResultService d’Oxatis", async () => {
+  const api = createOxatis({ appId: "x", token: "y", fetchImpl: async () =>
+    new Response("<ResultService><StatusCode>503</StatusCode><StatusSubCode>0</StatusSubCode><ErrorDetails>SECRET</ErrorDetails></ResultService>") });
+  await assert.rejects(api.product("41209146"), { message: "oxatis_result", status: 503 });
+});
