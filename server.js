@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -207,10 +206,7 @@ app.post("/api/chat",async(req,res)=>{
    return res.status(502).json({error:"Je n’ai pas pu analyser votre demande. Pouvez-vous la reformuler ?"});
   }
   const plan = shoppingPlan(JSON.parse(response.output_text), message, history, autonomous);
-  const key = req.get("authorization")?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
-  const trace = key && timingSafeEqual(createHash("sha256").update(key).digest(), Buffer.from("a248cbf6a1483247593f48bb38264237073531d4350cb260cffed88c044bb938","hex")) ? [] : null;
   const result = await advise(snapshot, plan, {
-   trace,
    ...catalogServices,
    choose: async options => {
     const advice = await client.responses.create({
@@ -222,7 +218,7 @@ app.post("/api/chat",async(req,res)=>{
     return advice.status === "completed" && advice.output_text ? JSON.parse(advice.output_text) : null;
    }
   });
-  res.json({ ...result, contextMode: plan.continuity, ...(trace ? { plan, trace } : {}) });
+  res.json({ ...result, contextMode: plan.continuity });
  }catch {
   console.error("Analyse ou recherche de conseil impossible.");
   res.status(500).json({error:"Je ne peux pas traiter votre demande pour le moment."});

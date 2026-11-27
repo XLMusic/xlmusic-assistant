@@ -6,7 +6,7 @@ const liveBatch = 6;
 const accessoryCategories = /\b(?:accessoires?|pieces? detachees?)\b/;
 const accessoryTitle = /^(?:[a-z0-9]+ ){0,2}(?:pickguards?|plaques? (?:de protection|de guitare)|cordes|jeux? de cordes|capos?|capodastres?|potentiometres?|chevalets?|micros? pour guitare|mediators?|sangles?|etuis?|housses?|supports?|pieds?|alimentations?|batterie de rechange)\b/;
 const accessoryUse = /\b(?:pickguard|cordes|capodastre|plaque|coque|housse|etui|support|pied|alimentation) (?:pour|de remplacement)\b/;
-const electricAccessory = /\b(?:guitar strings?|strings? for (?:electric )?guitars?|string sets?|pickguards?|pickup covers?|guitar (?:case|bag|strap|stand)|tuning machines?|housses?|etuis?|cordes? pour guitare)\b/;
+const electricAccessory = /\b(?:light cases?|stag(?:e)? cases?|guitar strings?|strings? for (?:electric )?guitars?|string sets?|pickguards?|pickup covers?|guitar (?:case|bag|strap|stand)|tuning machines?|housses?|etuis?|cordes? pour guitare)\b/;
 const explicitElectric = /\bguitares? electriques?\b/;
 const classicAcousticOrBass = /\b(?:guitares? classiques?|guitares? acoustiques?|basses? electriques?)\b/;
 const compactGuitar = /\b(?:mikro|mini strat(?:ocaster)?|short scale|petit diapason|taille reduite|format reduit|guitare de voyage|guitare pour enfant|3 4|7 8)\b/;
@@ -54,7 +54,7 @@ function productIdentity(product, slot) {
   if (accessoryUse.test(title) || (accessoryPrefix &&
       (guitarPosition < 0 || guitarPosition >= accessoryPrefix.length))) return false;
   if (slot.family === "electric" && (electricAccessory.test(title.split(/\b(?:avec|with|livree?)\b/)[0]) ||
-      classicAcousticOrBass.test(title) ||
+      traditionalAmp.test(title) || classicAcousticOrBass.test(title) ||
       /\b(?:pack|combo|ampli|amplificateur)\b/.test(title))) return false;
   if (slot.names.length && !slot.names.some(name =>
     [title, category, normalize(product.id), normalize(product.gtin), normalize(product.oxId)]
@@ -70,7 +70,8 @@ function productIdentity(product, slot) {
       (signalProcessor.test(`${title} ${category}`) &&
         /\b(?:guitare|guitar)\b/.test(`${title} ${category} ${description}`));
   }
-  if (slot.family === "amp" && personalAmp.test(title)) return false;
+  if (slot.family === "amp" && (personalAmp.test(title) ||
+      /\b(?:ampli(?:ficateur)? de puissance|power amp|enceintes?|baffles?|cabinets?)\b/.test(title))) return false;
   return familyMatches({ ...product, productType: category }, { ...slot, names: [] });
 }
 
@@ -241,10 +242,13 @@ function followUp(plan) {
   if (plan.outdoor && plan.slots.some(slot => slot.family === "pa")) {
     return "En extérieur, la portée dépend du bruit ambiant et de la distance au public. Pour une cinquantaine de personnes, quelle distance voulez-vous couvrir ?";
   }
+  if (plan.audience && plan.slots.some(slot => slot.family === "pa")) {
+    return questions[plan.question] ?? "Pour une cinquantaine de personnes, à quelle distance se trouvera le public ?";
+  }
   return questions[plan.question];
 }
 
-export async function advise(products, plan, { readLive, productLink, choose, trace } = {}) {
+export async function advise(products, plan, { readLive, productLink, choose } = {}) {
   if (!plan.slots.length || plan.slots.length > 3 || plan.question === "clarify" ||
       (plan.maxCents !== null && (!Number.isSafeInteger(plan.maxCents) || plan.maxCents <= 0))) {
     return { reply: questions.clarify, products: [], followUp: questions.clarify };
@@ -252,22 +256,11 @@ export async function advise(products, plan, { readLive, productLink, choose, tr
   const verified = [];
   let verificationFailed = false;
   const candidates = readLive ? shortlist(products, plan) : [];
-  const detail = (p, stage) => ({
-    stage,id:p.id,title:p.title,type:p.productType,categories:p.categories,price:p.price,
-    fits:plan.slots.map(slot=>{const fit=assess(p,slot,plan);return {identity:productIdentity(p,slot),missing:fit.missing,
-      excluded:fit.excluded,proved:[...fit.proved]};})
-  });
-  if (trace) {
-    const focus = products.filter(p=>["037-3150-547","IDCORE10V4","231-1600-000"].includes(p.id));
-    trace.push(...focus.map(p=>detail(p,"catalogue")));
-    trace.push(...candidates.map(p=>detail(p,"candidat")));
-  }
   const unavailable = new Set();
   const requestedNames = plan.slots.length === 1 ? plan.slots[0].names.map(normalize) : [];
   for (let offset = 0; offset < candidates.length; offset += liveBatch) {
     const batch = await Promise.allSettled(candidates.slice(offset, offset + liveBatch).map(async candidate => {
       const fresh = await readLive(candidate.oxId);
-      if(trace && fresh)trace.push(detail(fresh,"oxatis"));
       if (!fresh || String(fresh.oxId) !== String(candidate.oxId) || !fresh.title || fresh.visible !== true) return null;
       if (fresh.availability === "out of stock" && fresh.canOrder === false &&
           [fresh.title, fresh.id, fresh.gtin].some(value => normalize(value) && requestedNames.includes(normalize(value)))) {
@@ -310,7 +303,7 @@ export async function advise(products, plan, { readLive, productLink, choose, tr
 
   const options = priced.map(set => ({ total: set.price, items: set.items.map(item => ({
     title: item.product.title, category: item.product.productType,
-    description: String(item.product.description ?? "").slice(0, 420),
+    description: String(item.product.description ?? "").slice(0, 600),
     benefits: benefitsFor(item, plan)
   })) }));
   let decision;
@@ -346,9 +339,11 @@ export async function advise(products, plan, { readLive, productLink, choose, tr
       : `soit ${money(difference)} au-dessus de votre budget`;
     opening = `Je n’ai pas pu confirmer de solution adaptée dans votre budget. L’alternative vérifiée la plus proche est à ${money(selected.price)} TTC, ${delta}.`;
   }
+  const coverage = plan.audience && selected.items.some(item => item.family === "pa")
+    ? "La couverture dépend de la distance, du bruit ambiant et du lieu." : null;
   const ownMic = plan.ownsMicrophone && selected.items.some(item => item.family === "pa")
     ? "Votre micro est déjà prévu. Quel connecteur utilise-t-il ? Je pourrai vous préciser le branchement." : null;
-  return { reply: [opening, lines.join("\n\n"), ownMic, question].filter(Boolean).join("\n\n"),
+  return { reply: [opening, lines.join("\n\n"), coverage, ownMic, question].filter(Boolean).join("\n\n"),
     products: result, followUp: [ownMic, question].filter(Boolean).join(" ") || null };
 }
 

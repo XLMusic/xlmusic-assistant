@@ -65,6 +65,17 @@ export function shoppingInput(history, message) {
 }
 
 const refusesOverage = /\b(?:aucun depassement|sans depasser|ne (?:veux|peux|dois) pas depasser|budget (?:strict|maximum absolu|non negociable)|pas (?:un euro|de depassement|plus cher|au dessus)|ne proposez rien (?:au dela|de plus cher)|plafond (?:strict|absolu|non negociable)|impossible de depasser|pas plus de)\b/;
+const softUse = /^(?:(?:pour|adapte(?:e|es|s)? (?:au|a |pour)) )?(?:debut(?:er|ants?|antes?)|un debutant|(?:le |style )?(?:rock|metal|blues|jazz|pop))$/;
+const paCoverage = /\b(?:prestations?|public|personnes?|auditeurs?|jauge)\b/;
+const paNonTechnical = /^(?:autonome|portable|sonorisation|chant|pour chanteu(?:r|se)|adapt(?:e|ee) (?:au chant|a la voix))$/;
+const redundantTrait = {
+  battery: /^(?:autonomie |alimentation |fonctionnement |autonome )?(?:sur |avec |par )?batterie(?: (?:integree|rechargeable|interne))?$/,
+  bluetooth: /^(?:(?:avec|connexion|connectivite|lecture|audio) )?bluetooth$/,
+  microphone: /^(?:entree|prise|connexion|branchement) (?:(?:pour |d un |de )?)(?:un )?(?:micro|microphone)(?: (?:compatible|pour (?:le )?chant))?$/,
+  headphone: /^(?:sortie|prise|jack) (?:pour )?(?:le )?casque(?: (?:filaire|stereo))?$/
+};
+const guitarCompatibility = /^(?:(?:compatib(?:le|ilite)(?: avec)?|adapte(?:e)?|pour) (?:avec |a )?(?:une |la )?)?guitare electrique$/;
+
 const acceptsOverage = /\b(?:je peux depasser|j accepte (?:un |de )?depassement|je peux (?:mettre|ajouter) plus|budget flexible)\b/;
 
 export function shoppingPlan(intent, message, history, autonomous) {
@@ -104,6 +115,24 @@ export function shoppingPlan(intent, message, history, autonomous) {
     if (plan.question === "clarify") plan.question = "headphones";
   }
   const context = normalize(relevant.join(" "));
+  const audience = /\b(?:cinquantaine|50) (?:de )?(?:personnes|spectateurs)\b/.test(context);
+  const asksMicrophone = /\b(?:microphones?|micros?)\b/.test(context);
+  plan.slots = plan.slots.map(slot => {
+    const required = slot.family === "headphoneRig" && !asksMicrophone
+      ? slot.required.filter(name => name !== "microphone") : slot.required;
+    const preferred = [...slot.preferred];
+    const evidence = slot.evidence.filter(term => {
+      const text = normalize(term);
+      if (required.some(name => redundantTrait[name]?.test(text))) return false;
+      if (slot.family === "headphoneRig" && guitarCompatibility.test(text)) return false;
+      if (softUse.test(text) || (slot.family === "pa" && (paCoverage.test(text) || paNonTechnical.test(text)))) {
+        preferred.push(term);
+        return false;
+      }
+      return true;
+    });
+    return { ...slot, required, evidence, preferred };
+  });
   const outdoor = /\ben exterieur\b/.test(latest) && !/\bpas en exterieur\b/.test(latest)
     ? true : /\ben interieur\b/.test(latest) ? false : plan.outdoor === true;
   const ownsMicrophone = /\b(?:j ai deja|je possede deja|j utilise deja) un micro\b/.test(latest)
@@ -119,5 +148,5 @@ export function shoppingPlan(intent, message, history, autonomous) {
     (continuity === "followup" && /\ben (?:interieur|exterieur)\b/.test(context));
   const question = (plan.question === "venue" && venueAnswered || plan.question === "microphone" && ownsMicrophone)
     ? "none" : plan.question;
-  return { ...plan, continuity, allowOverBudget, outdoor, ownsMicrophone, beginner, compact, leftHanded, question };
+  return { ...plan, continuity, allowOverBudget, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
 }

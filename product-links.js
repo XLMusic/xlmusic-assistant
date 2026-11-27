@@ -123,7 +123,11 @@ export function createProductLinkVerifier(fetchImpl = fetch, { strict = false, i
     const indexed = Object.hasOwn(shopProductIndex, oxId) ? shopProductIndex[oxId] : null;
     const indexMatches = indexed && product.published === true && product.visible === true &&
       indexed[0] === product.id && (!indexed[1] || !product.gtin || indexed[1] === product.gtin);
-    const feedLink = indexedFallback && indexMatches ? shopProduct(lookup) : null;
+    // ProductGet uses the same shop article ID and confirms the item is published.
+    // If the feed knows the ID, require its independent SKU/GTIN match as well.
+    const trustedArticle = /^[1-9]\d{0,14}$/.test(oxId) && product.published === true &&
+      product.visible === true && typeof product.id === "string" && Boolean(product.id.trim());
+    const feedLink = indexedFallback && trustedArticle && (!indexed || indexMatches) ? shopProduct(lookup) : null;
     const result = link || (!definitivelyMissing && (strict ? feedLink : fallback));
     if (cache.size >= 2000) cache.delete(cache.keys().next().value);
     const lifetime = strict ? (link ? 300_000 : 30_000) : (link ? 3_600_000 : 300_000);

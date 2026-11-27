@@ -338,3 +338,31 @@ test("un Mustang décrit par son raccordement à des écouteurs ou un casque est
   const result = await advise([fender], shopping, {readLive:async()=>fender,productLink:async()=>null});
   assert.deepEqual(titles(result), [fender.title]);
 });
+
+test("les préférences rock et débutant ne bloquent plus les fiches du panier réel", async () => {
+  const shopping = plan(intent([
+    slot("electric",{evidence:["débutant","style rock"]}),
+    slot("amp",{evidence:["adapté au rock"]})
+  ]), guitarAndAmp);
+  const result = await advise([squier,amp], shopping, services);
+  assert.deepEqual(titles(result), [squier.title,amp.title]);
+  assert.match(result.reply,/327,00/);
+});
+
+test("le Mustang n’exige pas une entrée microphone ni les mots exacts de la demande", async () => {
+  const shopping = plan(intent([slot("headphoneRig", {
+    required:["microphone","headphone"],evidence:["compatible avec une guitare électrique","sortie casque"]
+  })]), headphones);
+  const result = await advise([mustang], shopping, services);
+  assert.deepEqual(titles(result), [mustang.title]);
+});
+
+test("une enceinte garde les vérifications techniques sans exiger une jauge inscrite sur sa fiche", async () => {
+  const shopping = plan(intent([slot("pa", {
+    required:["battery","bluetooth","microphone"],
+    evidence:["autonome sur batterie","Bluetooth","entrée microphone","adaptée à de petites prestations devant environ 50 personnes"]
+  })], {question:"venue"}), singer);
+  const result = await advise([portable,plugOnly,bundled], shopping, services);
+  assert.deepEqual(titles(result), [portable.title]);
+  assert.match(result.reply,/couverture/);
+});
