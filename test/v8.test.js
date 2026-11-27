@@ -295,3 +295,26 @@ test("V8 — une adresse bloquée laisse place à la fiche Oxatis si son identit
   assert.equal(await verifier(squier), "https://www.xlmusic.fr/PBSCProduct.asp?ItmID=42636242");
   assert.equal(requests.length, 2);
 });
+
+test("le panier garde une Squier rangée sous Guitares–Amplis–Effets–Accessoires", async () => {
+  const guitar = { ...squier, productType: "Guitares - Amplis - Effets - Accessoires > Guitares Electriques" };
+  const expensive = Array.from({length: 20}, (_, i) => product(String(500 + i), "Guitare électrique Rock", 390 + i));
+  const catalog = [guitar, amp, ...expensive];
+  const shopping = plan(intent([slot("other")]), guitarAndAmp);
+  const response = await advise(catalog, shopping, {
+    readLive: async id => catalog.find(item => item.oxId === id), productLink: async () => null
+  });
+  assert.deepEqual(titles(response), [guitar.title, amp.title]);
+  assert.match(response.reply, /327,00/);
+});
+
+test("le flux public confirme le lien du Mustang lorsque la boutique bloque la lecture", async () => {
+  const product = { oxId: "41209146", id: "231-1600-000", gtin: "717669896706", visible: true, published: true };
+  const blocked = createProductLinkVerifier(async () => new Response("Accès refusé", {status:403}),
+    {strict:true,indexedFallback:true});
+  assert.equal(await blocked(product), "https://www.xlmusic.fr/PBSCProduct.asp?ItmID=41209146");
+  assert.equal(await blocked({...product,id:"autre"}), null);
+  const missing = createProductLinkVerifier(async () => new Response("Absent", {status:404}),
+    {strict:true,indexedFallback:true});
+  assert.equal(await missing(product), null);
+});

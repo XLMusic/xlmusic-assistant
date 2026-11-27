@@ -49,7 +49,7 @@ offres normales mais permet de mentionner à part une alternative, sauf refus.
 `;
 
 const shoppingVerb = /\b(?:je cherche|je recherche|je souhaite acheter|je voudrais acheter|avez vous|que me conseillez vous|quelles? solutions|quel(?:le)? modele|quelles? guitares)\b/;
-const previousReference = /\b(?:et si|meme budget|ce modele|cette enceinte|ce produit|celui ci|celle ci|votre proposition|les memes|a la place|finalement|plutot|parmi ces|qu en est il)\b/;
+const previousReference = /\b(?:et si|et avec|et pour|meme budget|ce modele|cette enceinte|ce produit|celui ci|celle ci|votre proposition|les memes|a la place|finalement|plutot|parmi ces|qu en est il)\b/;
 const target = /\b(?:un|une|des|quels?|quelles?) (?:[a-z0-9]+ ){0,3}(?:guitares?|claviers?|amplis?|enceintes?|micros?|casques?|pianos?|basses?|batteries?|projecteurs?|interfaces?|solutions?)\b/;
 
 export function shoppingInput(history, message) {
@@ -84,6 +84,14 @@ export function shoppingPlan(intent, message, history, autonomous) {
     ? !refusesOverage.test(lastExplicit)
     : plan.allowOverBudget !== false;
   const latest = normalize(message);
+  const explicitPair = /\b(?:une guitare(?: electrique)? et (?:un |l )ampli|un ampli et une guitare(?: electrique)?)\b/.test(latest) &&
+    /\b(?:electrique|rock|metal)\b/.test(latest) &&
+    !/\b(?:sans ampli|je possede|j ai deja|casque|guitare acoustique|guitare classique)\b/.test(latest);
+  if (explicitPair && !plan.slots.some(slot => !["electric", "amp", "other"].includes(slot.family))) {
+    const defaults = { names: [], brands: [], required: [], evidence: [], excluded: [], preferred: [] };
+    plan.slots = ["electric", "amp"].map(family => plan.slots.find(slot => slot.family === family) ?? { ...defaults, family });
+    if (plan.question === "clarify") plan.question = "none";
+  }
   const context = normalize(relevant.join(" "));
   const outdoor = /\ben exterieur\b/.test(latest) && !/\bpas en exterieur\b/.test(latest)
     ? true : /\ben interieur\b/.test(latest) ? false : plan.outdoor === true;

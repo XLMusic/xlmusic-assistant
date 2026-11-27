@@ -1,3 +1,5 @@
+import shopProductIndex from "./shop-product-index.json" with { type: "json" };
+
 const origin = "https://www.xlmusic.fr";
 const verifiedSquier = {
   id: "037-3150-547",
@@ -68,7 +70,7 @@ function routeId(value) {
   return url.pathname.match(/-c2x(\d+)\/?$/i)?.[1] ?? url.searchParams.get("ItmID");
 }
 
-export function createProductLinkVerifier(fetchImpl = fetch, { strict = false } = {}) {
+export function createProductLinkVerifier(fetchImpl = fetch, { strict = false, indexedFallback = false } = {}) {
   const cache = new Map();
   return async product => {
     const isVerifiedSquier = product.id === verifiedSquier.id &&
@@ -116,7 +118,13 @@ export function createProductLinkVerifier(fetchImpl = fetch, { strict = false } 
       }
       if (link || signal.aborted) break;
     }
-    const result = link || (!strict && !definitivelyMissing && fallback);
+    // The public merchant feed publishes the same SKU and shop article ID.
+    // Use that catalog-backed route when the server cannot read the page.
+    const indexed = Object.hasOwn(shopProductIndex, oxId) ? shopProductIndex[oxId] : null;
+    const indexMatches = indexed && product.published === true && product.visible === true &&
+      indexed[0] === product.id && (!indexed[1] || !product.gtin || indexed[1] === product.gtin);
+    const feedLink = indexedFallback && indexMatches ? shopProduct(lookup) : null;
+    const result = link || (!definitivelyMissing && (strict ? feedLink : fallback));
     if (cache.size >= 2000) cache.delete(cache.keys().next().value);
     const lifetime = strict ? (link ? 300_000 : 30_000) : (link ? 3_600_000 : 300_000);
     cache.set(key, { result: result || null, expires: Date.now() + lifetime });

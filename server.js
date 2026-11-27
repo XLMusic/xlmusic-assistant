@@ -29,7 +29,7 @@ configureCatalogAdmin(app, oxatis, store);
 let catalog=[], catalogUpdatedAt=null, lastCatalogError=null;
 let oxatisCatalogReadAt = null;
 const oxatisCatalogMaxAge = 5 * 60_000;
-const productLink = createProductLinkVerifier(fetch, { strict: true });
+const productLink = createProductLinkVerifier(fetch, { strict: true, indexedFallback: true });
 const clean=s=>String(s??"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim();
 const arr=x=>Array.isArray(x)?x:(x?[x]:[]);
 

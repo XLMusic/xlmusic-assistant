@@ -41,7 +41,9 @@ function positive(clauses, matches) {
 
 function productIdentity(product, slot) {
   const title = normalize(product.title);
-  const category = normalize([product.productType, ...(product.categories ?? [])].join(" "));
+  const categoryFields = [product.productType, ...(product.categories ?? [])].filter(Boolean);
+  const categories = categoryFields.flatMap(value => String(value).split(/\s*>\s*/)).map(normalize);
+  const category = normalize(categoryFields.join(" "));
   const brand = normalize(product.brand);
   if (slot.brands.length && !slot.brands.some(name =>
     brand ? normalize(name) === brand : title.startsWith(normalize(name) + " "))) return false;
@@ -56,7 +58,8 @@ function productIdentity(product, slot) {
     [title, category, normalize(product.id), normalize(product.gtin), normalize(product.oxId)]
       .some(field => phrase(field, normalize(name))))) return false;
   if (slot.family === "electric") {
-    return explicitElectric.test(title) || (!accessoryCategories.test(category) && explicitElectric.test(category));
+    return explicitElectric.test(title) ||
+      categories.some(value => explicitElectric.test(value) && !accessoryCategories.test(value));
   }
   if (slot.family === "headphoneRig") {
     if (traditionalAmp.test(title)) return false;
@@ -107,13 +110,15 @@ const byFit = (a, b) => a.missing - b.missing || Number(a.compactPenalty) - Numb
   b.score - a.score || a.price - b.price;
 
 function candidatesFor(products, slot, plan) {
-  const candidates = products.filter(product => productIdentity(product, slot)).map(product => {
+  return products.filter(product => productIdentity(product, slot)).map(product => {
     const result = assess(product, slot, plan);
     const price = cents(product.price) ?? Infinity;
     return { ...result, price, compactPenalty: result.compact && plan.beginner && !plan.compact,
       score: result.score + (usable(product, plan) ? 3 : 0) };
   }).filter(candidate => !candidate.excluded);
-  const estimatedBudget = plan.slots.length === 1 ? plan.maxCents : null;
+}
+
+function prioritize(candidates, plan, estimatedBudget) {
   const near = candidates.filter(item => within(item.price, { ...plan, maxCents: estimatedBudget })).sort(byFit);
   const cheapest = [...near].sort((a, b) =>
     a.missing - b.missing || Number(a.compactPenalty) - Number(b.compactPenalty) || a.price - b.price || byFit(a, b));
@@ -124,7 +129,14 @@ function candidatesFor(products, slot, plan) {
 }
 
 function shortlist(products, plan) {
-  const groups = plan.slots.map(slot => candidatesFor(products, slot, plan));
+  const assessed = plan.slots.map(slot => candidatesFor(products, slot, plan));
+  const minimums = assessed.map(group => group.reduce((best, item) =>
+    !item.missing && usable(item.product, plan) ? Math.min(best, item.price) : best, Infinity));
+  const groups = assessed.map((group, index) => {
+    const reserved = minimums.reduce((sum, cost, other) => other !== index && Number.isFinite(cost) ? sum + cost : sum, 0);
+    const cap = plan.maxCents === null ? null : plan.maxCents - reserved;
+    return prioritize(group, plan, cap);
+  });
   const unique = new Map();
   for (let index = 0; index < Math.max(...groups.map(group => group.length)); index++) {
     for (const group of groups) {
