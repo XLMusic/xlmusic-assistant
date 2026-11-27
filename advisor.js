@@ -244,7 +244,7 @@ function followUp(plan) {
   return questions[plan.question];
 }
 
-export async function advise(products, plan, { readLive, productLink, choose } = {}) {
+export async function advise(products, plan, { readLive, productLink, choose, trace } = {}) {
   if (!plan.slots.length || plan.slots.length > 3 || plan.question === "clarify" ||
       (plan.maxCents !== null && (!Number.isSafeInteger(plan.maxCents) || plan.maxCents <= 0))) {
     return { reply: questions.clarify, products: [], followUp: questions.clarify };
@@ -252,11 +252,22 @@ export async function advise(products, plan, { readLive, productLink, choose } =
   const verified = [];
   let verificationFailed = false;
   const candidates = readLive ? shortlist(products, plan) : [];
+  const detail = (p, stage) => ({
+    stage,id:p.id,title:p.title,type:p.productType,categories:p.categories,price:p.price,
+    fits:plan.slots.map(slot=>{const fit=assess(p,slot,plan);return {identity:productIdentity(p,slot),missing:fit.missing,
+      excluded:fit.excluded,proved:[...fit.proved]};})
+  });
+  if (trace) {
+    const focus = products.filter(p=>["037-3150-547","IDCORE10V4","231-1600-000"].includes(p.id));
+    trace.push(...focus.map(p=>detail(p,"catalogue")));
+    trace.push(...candidates.map(p=>detail(p,"candidat")));
+  }
   const unavailable = new Set();
   const requestedNames = plan.slots.length === 1 ? plan.slots[0].names.map(normalize) : [];
   for (let offset = 0; offset < candidates.length; offset += liveBatch) {
     const batch = await Promise.allSettled(candidates.slice(offset, offset + liveBatch).map(async candidate => {
       const fresh = await readLive(candidate.oxId);
+      if(trace && fresh)trace.push(detail(fresh,"oxatis"));
       if (!fresh || String(fresh.oxId) !== String(candidate.oxId) || !fresh.title || fresh.visible !== true) return null;
       if (fresh.availability === "out of stock" && fresh.canOrder === false &&
           [fresh.title, fresh.id, fresh.gtin].some(value => normalize(value) && requestedNames.includes(normalize(value)))) {
