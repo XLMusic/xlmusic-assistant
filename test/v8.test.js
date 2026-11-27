@@ -366,3 +366,27 @@ test("une enceinte garde les vérifications techniques sans exiger une jauge ins
   assert.deepEqual(titles(result), [portable.title]);
   assert.match(result.reply,/couverture/);
 });
+
+test("un combo n’est jamais la guitare demandée, même classé parmi les électriques", async () => {
+  const combo = product("814","Orange, Combos guitare CRUSH20 Black - 20 W",147,{productType:"Guitares Electriques"});
+  const parts=[combo,squier];
+  const suitable = await advise(parts, plan(intent([slot("electric")]), lowBudget), {
+    readLive:async id=>parts.find(p=>p.oxId===id),productLink:async()=>null
+  });
+  assert.deepEqual(titles(suitable),[squier.title]);
+  assert.match(suitable.reply,/49,00/);
+});
+
+test("une marque de guitare déjà possédée ne filtre pas arbitrairement la solution casque", async () => {
+  const offer = plan(intent([slot("headphoneRig", {brands:["Stratocaster"],required:["headphone","microphone"],
+    evidence:["sortie audio dédiée pour guitare"]})]), headphones);
+  assert.deepEqual(titles(await advise([mustang],offer,services)),[mustang.title]);
+});
+
+test("une enceinte batterie et Bluetooth garde les trois contrôles après le suivi micro", async () => {
+  const follow = plan(intent([slot("other", {evidence:["assure une couverture suffisante à l’extérieur"]})],
+    {continuity:"followup"}), outdoors,[singer]);
+  assert.deepEqual(follow.slots[0].required,["battery","bluetooth","microphone"]);
+  assert.equal(follow.slots[0].family,"pa");
+  assert.deepEqual(titles(await advise([portable,plugOnly,bundled],follow,services)),[portable.title]);
+});

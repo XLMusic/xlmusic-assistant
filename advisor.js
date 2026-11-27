@@ -55,7 +55,7 @@ function productIdentity(product, slot) {
       (guitarPosition < 0 || guitarPosition >= accessoryPrefix.length))) return false;
   if (slot.family === "electric" && (electricAccessory.test(title.split(/\b(?:avec|with|livree?)\b/)[0]) ||
       traditionalAmp.test(title) || classicAcousticOrBass.test(title) ||
-      /\b(?:pack|combo|ampli|amplificateur)\b/.test(title))) return false;
+      /\b(?:packs?|combos?|amplis?|amplificateurs?|cabinets?)\b/.test(title))) return false;
   if (slot.names.length && !slot.names.some(name =>
     [title, category, normalize(product.id), normalize(product.gtin), normalize(product.oxId)]
       .some(field => phrase(field, normalize(name))))) return false;
@@ -64,7 +64,8 @@ function productIdentity(product, slot) {
       categories.some(value => explicitElectric.test(value) && !accessoryCategories.test(value));
   }
   if (slot.family === "headphoneRig") {
-    if (traditionalAmp.test(title)) return false;
+    if (traditionalAmp.test(title) || explicitElectric.test(title) ||
+        /\b(?:interfaces? audio|cartes? son)\b/.test(title)) return false;
     const description = normalize(product.description);
     return personalAmp.test(title) || personalAmp.test(description) ||
       (signalProcessor.test(`${title} ${category}`) &&
@@ -101,7 +102,9 @@ function assess(product, slot, plan) {
   const excluded = wrongHand || slot.excluded.some(term => positive(clauses, clause => phrase(clause, normalize(term))));
   const compact = slot.family === "electric" && compactGuitar.test(text);
   const preferences = [...new Set(slot.preferred.flatMap(terms))].filter(word => phrase(text, word)).length;
-  const score = preferences + (isStock(product) ? 2 : 0) +
+  const dedicatedHeadphones = slot.family === "headphoneRig" && personalAmp.test(normalize(product.title));
+  const stockB = /\b(?:stock b|b stock|occasion|reconditionne)\b/.test(normalize(product.title));
+  const score = preferences + (isStock(product) ? 2 : 0) + (dedicatedHeadphones ? 8 : 0) - (stockB ? 5 : 0) +
     (slot.family === "electric" && plan.beginner && /\b(?:floyd rose|vibrato flottant)\b/.test(text) ? -4 : 0);
   return { product, missing, proved, excluded, compact, score };
 }
@@ -324,7 +327,10 @@ export async function advise(products, plan, { readLive, productLink, choose } =
     const benefitIndex = decision?.benefits?.[index];
     const benefit = (Number.isInteger(benefitIndex) ? optionsForItem[benefitIndex] : null) ?? optionsForItem[0];
     const reference = item.sku ? `Réf. ${item.sku}` : null;
-    return [`• ${item.title} — ${item.price} TTC, ${item.availability}.`, reference, benefit, item.url]
+    const choice = selected.items[index];
+    const functions = choice.family === "pa" && ["battery", "bluetooth", "microphone"].every(fact => choice.proved.has(fact))
+      ? "Fonctionne sur batterie, avec Bluetooth et une entrée micro." : null;
+    return [`• ${item.title} — ${item.price} TTC, ${item.availability}.`, reference, functions, benefit, item.url]
       .filter(Boolean).join("\n");
   });
   if (selected.items.some(({ product }) => product.discountRulePresent)) {

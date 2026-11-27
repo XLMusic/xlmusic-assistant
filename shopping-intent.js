@@ -110,11 +110,24 @@ export function shoppingPlan(intent, message, history, autonomous) {
     const interpreted = plan.slots.find(slot => slot.family === "electric") ?? plan.slots[0];
     plan.slots = [{ ...defaults, ...interpreted, family: "electric", names: interpreted?.family === "electric" ? interpreted.names : [] }];
     if (plan.question === "clarify") plan.question = "none";
-  } else if (wantsHeadphones && !plan.slots.some(slot => slot.family === "headphoneRig")) {
-    plan.slots = [{ ...defaults, family: "headphoneRig", required: ["headphone"] }];
+  } else if (wantsHeadphones) {
+    const actual = plan.slots.find(slot => slot.family === "headphoneRig");
+    const evidence = (actual?.evidence ?? []).filter(term => latest.includes(normalize(term)));
+    const brandedRequest = /\b(?:de marque|uniquement chez|uniquement du|uniquement du materiel)\b/.test(latest);
+    plan.slots = [{ ...defaults, family: "headphoneRig", required: ["headphone"], evidence,
+      brands: brandedRequest ? actual?.brands ?? [] : [] }];
     if (plan.question === "clarify") plan.question = "headphones";
   }
   const context = normalize(relevant.join(" "));
+  const explicitPortablePA = /\benceintes?\b/.test(context) && /\bsur batterie\b/.test(context) &&
+    /\bbluetooth\b/.test(context) && /\b(?:chanter|chanteur|chanteuse|chant)\b/.test(context) &&
+    !/\b(?:sans bluetooth|plus besoin de bluetooth|pas besoin de bluetooth|sur secteur uniquement|sans batterie)\b/.test(latest);
+  if (explicitPortablePA) {
+    const actual = plan.slots.find(slot => slot.family === "pa") ?? defaults;
+    const evidence = actual.evidence.filter(term => context.includes(normalize(term)));
+    plan.slots = [{ ...actual, family: "pa", required: ["battery", "bluetooth", "microphone"], evidence }];
+    if (plan.question === "clarify") plan.question = "venue";
+  }
   const audience = /\b(?:cinquantaine|50) (?:de )?(?:personnes|spectateurs)\b/.test(context);
   const asksMicrophone = /\b(?:microphones?|micros?)\b/.test(context);
   plan.slots = plan.slots.map(slot => {
