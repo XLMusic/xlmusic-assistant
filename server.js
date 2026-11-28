@@ -217,6 +217,15 @@ app.post("/api/chat",async(req,res)=>{
     ? res.json({reply, products:[], followUp:null, contextMode:"followup", conversation:memory})
     : res.status(502).json({error:"Je n’ai pas pu formuler la réponse. Pouvez-vous réessayer ?"});
   }
+  const plan = shoppingPlan(intent, message, history, autonomous);
+  const stringHint = ["unknown", "acoustic", "nylon", "steel", "electric"].includes(intent.stringInstrument)
+   ? intent.stringInstrument : null;
+  if (!stringHint && (intent.mode === "clarify" || plan.clarification)) {
+   const memory = restoreConversation(req.body?.conversation,history,[]);
+   const question = plan.clarification || "Qu’est-ce que vous souhaitez obtenir avec votre matériel actuel ?";
+   const reply = [generalAdvice || plan.effectAdvice, question].filter(Boolean).join("\n\n");
+   return res.json(recordConversation({reply,products:[],followUp:question},plan,memory,message));
+  }
   if(useOxatis || !catalog.length) await refreshCatalog();
   if(!catalog.length)return res.status(503).json({error:"Je ne peux pas vérifier les produits pour le moment. Réessayez dans un instant."});
   const snapshot=catalog;
@@ -229,16 +238,9 @@ app.post("/api/chat",async(req,res)=>{
   const exact = await adviseExactProduct(snapshot, message, catalogServices);
   if (exact) return res.json(recordConversation(withAdvice(exact),{continuity:"new",maxCents:null},null,message));
   const memory=restoreConversation(req.body?.conversation,history,snapshot);
-  const stringHint = ["unknown", "acoustic", "nylon", "steel", "electric"].includes(intent.stringInstrument)
-   ? intent.stringInstrument : null;
   const handled=await handleConversation(message,memory,snapshot,catalogServices,stringHint,
    Boolean(stringHint || intent.mode === "continuation" && memory.pending === "strings"));
   if(handled)return res.json(withAdvice(handled));
-  const plan = shoppingPlan(intent, message, history, autonomous);
-  if (plan.clarification) {
-   const reply = [generalAdvice || plan.effectAdvice, plan.clarification].filter(Boolean).join("\n\n");
-   return res.json(recordConversation({reply,products:[],followUp:plan.clarification},plan,memory,message));
-  }
   if (plan.effectAdvice && !plan.slots.length && plan.question !== "clarify") {
    return res.json(recordConversation({reply:plan.effectAdvice,products:[],followUp:null},plan,memory,message));
   }
