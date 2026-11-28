@@ -245,7 +245,11 @@ export function shoppingPlan(intent, message, history, autonomous) {
   const explicitPair = /\b(?:une guitare(?: electrique)? et (?:un |l )ampli|un ampli et une guitare(?: electrique)?)\b/.test(latest) &&
     /\b(?:electrique|rock|metal)\b/.test(latest) &&
     !/\b(?:sans ampli|je possede|j ai deja|casque|cable|housse|pedales?|sangle|accessoires?|guitare acoustique|guitare classique)\b/.test(latest);
-  const onlyGuitars = /\b(?:quelles?|comparez|compare|comparaison|cherche|recherche|avez vous|conseill(?:ez|er))\b.*\bguitares? electriques?\b/.test(latest) &&
+  const revisedGuitarComparison = continuity === "followup" && plan.compareProducts &&
+    /\b(?:guitare|comparez|comparaison)\b/.test(latest) &&
+    previousMessages.some(text => /\bguitares? electriques?\b/.test(normalize(text))) &&
+    plan.slots.some(slot => slot.family === "electric" || slot.itemRole === "instrument");
+  const onlyGuitars = revisedGuitarComparison || /\b(?:quelles?|comparez|compare|comparaison|cherche|recherche|avez vous|conseill(?:ez|er))\b.*\bguitares? electriques?\b/.test(latest) &&
     !/\b(?:ampli|casque|cordes|capodastre|housse|pedale|je possede|j ai deja|accessoires?)\b/.test(latest);
   const wantsHeadphones = /\b(?:jouer|jeu) au casque\b/.test(latest) &&
     /\bsans (?:utiliser )?(?:(?:mon|l|un|d) )?ampli(?:ficateur)?\b/.test(latest);
@@ -422,6 +426,16 @@ export function shoppingPlan(intent, message, history, autonomous) {
     (continuity === "followup" && /\ben (?:interieur|exterieur)\b/.test(context));
   const question = (plan.question === "venue" && venueAnswered || plan.question === "microphone" && ownsMicrophone)
     ? "none" : plan.question;
+  const asksForWiredHeadphones = /\bcasques?\b/.test(context) &&
+    /\b(?:filaire|casque a brancher)\b/.test(context) &&
+    !/\b(?:sans ampli|micro main|micro casque|emetteur casque)\b/.test(context);
+  if (asksForWiredHeadphones && plan.slots.length === 1 && !revisedGuitarComparison && !onlyGuitars &&
+      !plan.slots.some(slot => slot.family === "electric" || slot.family === "amp" || slot.effectKind === "pedal" || slot.effectKind === "multi")) {
+    const slot = plan.slots[0];
+    plan.slots = [{ ...slot, wiredHeadphone:true, names:[], brands:slot.brands.filter(brand =>
+      latest.includes(normalize(brand)) && !/boss/.test(normalize(brand))), required:[],
+      evidence:slot.evidence.filter(term => /\b(?:3 5 mm|6 35 mm|jack)\b/.test(normalize(term)) && latest.includes(normalize(term))) }];
+  }
   const handMic = /\b(?:micro(?:phone)?s?(?: sans fil)? (?:a (?:la )?)?main|emetteurs? (?:a (?:la )?)?main)\b/.test(context);
   if (handMic) {
     plan.slots = plan.slots.map(slot => ({ ...slot, handMic: true,
@@ -430,5 +444,11 @@ export function shoppingPlan(intent, message, history, autonomous) {
   const compareEffects = /\b(?:compar\w*|ou|versus|plutot)\b/.test(latest) &&
     plan.slots.length === 2 && plan.slots.some(slot => slot.effectKind === "pedal") &&
     plan.slots.some(slot => slot.effectKind === "multi");
+  if (compareEffects) {
+    plan.slots = plan.slots.map(slot => ({ ...slot, required:slot.required.filter(trait =>
+      trait !== "effects" && trait !== "gain"), evidence:slot.evidence.filter(term =>
+      extraTechnical.test(normalize(term)) && latest.includes(normalize(term))),
+      brands:slot.brands.filter(brand => latest.includes(normalize(brand))) }));
+  }
   return { ...plan, compareEffects, wantsHeadphones, effectAdvice, clarification: intent.question === "clarify" ? safeClarification : "", continuity, allowOverBudget: allowOverBudget && !explicitMaximum, flexibleComparison, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
 }

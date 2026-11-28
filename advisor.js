@@ -1,3 +1,4 @@
+import { headphoneCandidate } from "./compatibility.js";
 import { compareCommercialRank, defaultCommercialPolicy, sumCommercialRank } from "./commercial-policy.js";
 import { cents, familyMatches, isStock, money, normalize, questions, traits, within } from "./recommendations.js";
 
@@ -61,6 +62,7 @@ function productIdentity(product, slot) {
   const categoryFields = [product.productType, ...(product.categories ?? [])].filter(Boolean);
   const categories = categoryFields.flatMap(value => String(value).split(/\s*>\s*/)).map(normalize);
   const category = normalize(categoryFields.join(" "));
+  if (slot.wiredHeadphone && !headphoneCandidate(product)) return false;
   if (slot.handMic && (
     /\b(?:serre tete|casques?|headsets?|cravates?|lavaliers?|bodypacks?|adaptateurs?)\b/.test(title) ||
     !/\b(?:micros?|microphones?|emetteurs?)\b/.test(title) ||
@@ -69,6 +71,7 @@ function productIdentity(product, slot) {
   const brand = normalize(product.brand);
   if (slot.brands.length && !slot.brands.some(name =>
     brand ? normalize(name) === brand : title.startsWith(normalize(name) + " "))) return false;
+  if (slot.wiredHeadphone) return /\b(?:jack|3 5 mm|6 35 mm)\b/.test(normalize(product.description));
   if (slot.effectKind === "pedal" || slot.effectKind === "multi") {
     if (/\b(?:pedalboards?|etuis?|housses?|alimentations?|patch cables?|cables? (?:patch|pour)|supports?|switchers?|pedales? d expression|footswitchs?)\b/.test(title)) return false;
     const multi = /\b(?:multi effets?|multieffets?|multi effects?|multieffects?|processeurs? d effets?)\b/;

@@ -178,6 +178,9 @@ export async function handleConversation(message,state,catalog,services,stringHi
       /^savarez\b/.test(normalize(product.title));
     const plan = accessoryPlan(fits, availableBudget(state.budget, state));
     plan.slots[0].preferredBrand = "Savarez";
+    if (/\b(?:souple|tirant faible|tension faible|light)\b/.test(text)) {
+      plan.slots[0].preferred = ["souple", "light", "faible"];
+    }
     const selected = await advise(catalog, plan, services);
     const savarez = selected.verifiedProducts?.some(isSavarez);
     state.pending=null;
