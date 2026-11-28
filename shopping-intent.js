@@ -238,24 +238,43 @@ export function shoppingPlan(intent, message, history, autonomous) {
     const namedEffects = ["overdrive", "delay"].filter(effect => latest.split(" ").includes(effect));
     const evidence = existing.evidence.filter(term => {
       const text = normalize(term);
-      return !/^(?:en stock|multi effets?|multieffets?|pour guitare|guitare)$/.test(text) &&
+      return !/^(?:en stock|multi effets?|multieffets?|pour guitare|guitare|rock|blues|rock blues|blues rock)$/.test(text) &&
+        (extraTechnical.test(text) || text.split(" ").length >= 2 && latest.includes(text)) &&
         !namedEffects.some(effect => text.split(" ").includes(effect));
     });
     plan.slots = [{ ...defaults, ...existing, family: "other", effectKind: "multi",
       evidence: [...evidence, ...namedEffects] }];
     if (plan.question === "clarify" && !safeClarification) plan.question = "none";
   }
+  const namesTwoPedals = latest.match(/\bdeux pedales(?: distinctes| separees)?\b.*?\b(?:un |une )?(overdrive|delay|echo|reverb|chorus|fuzz|distorsion) et (?:un |une )?(overdrive|delay|echo|reverb|chorus|fuzz|distorsion)\b/);
+  if (namesTwoPedals && namesTwoPedals[1] !== namesTwoPedals[2] && plan.slots.length <= 2) {
+    const synonyms = { delay: ["delay", "echo"], echo: ["echo", "delay"], distorsion: ["distorsion", "distortion"] };
+    plan.slots = namesTwoPedals.slice(1).map(effect => {
+      const existing = plan.slots.find(item => item.names.some(name => normalize(name).split(" ").includes(effect)));
+      return { ...defaults, ...existing, family: "other", effectKind: "pedal",
+        names: synonyms[effect] ?? [effect],
+        evidence: (existing?.evidence ?? []).filter(term => {
+          const text = normalize(term);
+          return extraTechnical.test(text) || (/\btap tempo\b/.test(text) && latest.includes(text));
+        }) };
+    });
+    if (plan.question === "clarify" && !safeClarification) plan.question = "none";
+  }
   const audience = /\b(?:cinquantaine|50) (?:de )?(?:personnes|spectateurs)\b/.test(context);
   const asksMicrophone = /\b(?:microphones?|micros?)\b/.test(context);
   plan.slots = plan.slots.map(slot => {
     const isAcousticAmp = acousticAmp && slot.family === "amp";
-    const required = isAcousticAmp && !/\b(?:micros?|voix|chant|xlr)\b/.test(context)
+    const isEffect = ["pedal", "multi"].includes(slot.effectKind);
+    const required = isEffect && /\boverdrive\b/.test(context)
+      ? slot.required.filter(name => name !== "gain")
+      : isAcousticAmp && !/\b(?:micros?|voix|chant|xlr)\b/.test(context)
       ? slot.required.filter(name => name !== "microphone")
       : slot.family === "headphoneRig" && !asksMicrophone
       ? slot.required.filter(name => name !== "microphone") : slot.required;
     const preferred = [...slot.preferred];
     const evidence = slot.evidence.filter(term => {
       const text = normalize(term);
+      if (isEffect && /^(?:en stock|stock|guitare|pour guitare|rock|blues|rock blues|blues rock|pedale|pedales|deux pedales|pedales distinctes|multi effets?|multieffets?)$/.test(text)) return false;
       if (required.some(name => redundantTrait[name]?.test(text))) return false;
       if (isAcousticAmp && (genericAcousticAmp.test(text) || /^(?:en stock|stock|disponible)$/.test(text))) return false;
       if (slot.family === "headphoneRig" && guitarCompatibility.test(text)) return false;
