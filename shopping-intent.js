@@ -167,19 +167,21 @@ export function shoppingPlan(intent, message, history, autonomous) {
     !/\b(?:entrees?|prises?|enceintes?|amplis?|tables? de mixage|connecter|brancher|j ai deja|je possede)\b/.test(latest);
   if ((genericBass || genericVocalMic) && plan.slots.length <= 1) {
     const existing = plan.slots[0] ?? defaults;
+    const vocalTerms = /^(?:micros?|microphones?|filaires?|xlr|dynamiques?|de|pour|le|sur|en|sans|fil|chant|chanter|voix|vocaux?|vocales?|scene|stock|definition|disponibles?)$/;
     const genericNames = genericBass ? /^(?:guitare )?basses?(?: electriques?)?(?: [0-9]+ cordes?)?$/
       : /^(?:micros?|microphones?)(?:(?: (?:filaires?|xlr|dynamiques?|de chant|pour (?:le )?chant|chant|vocaux?|de scene|sans fil)))*$/;
-    const names = existing.names.filter(name => !genericNames.test(normalize(name)) && !/^[0-9]+ cordes?$/.test(normalize(name)) && latest.includes(normalize(name)));
+    const genericVocalText = term => genericVocalMic && term.split(" ").every(word => vocalTerms.test(word));
+    const names = existing.names.filter(name => !genericVocalText(normalize(name)) && !genericNames.test(normalize(name)) && !/^[0-9]+ cordes?$/.test(normalize(name)) && latest.includes(normalize(name)));
     const evidence = existing.evidence.filter(term => {
       const value = normalize(term);
-      return !genericNames.test(value) && !/^(?:pour (?:le )?chant|chant|sur scene|en stock|filaires?)$/.test(value) &&
+      return !genericVocalText(value) && !genericNames.test(value) && !/^(?:pour (?:le )?chant|chant|sur scene|en stock|filaires?)$/.test(value) &&
         (latest.includes(value) || value.split("|").some(part => latest.includes(part)));
     });
     if (genericBass) {
       const stringCount = latest.match(/\b[4-9] cordes?\b/)?.[0];
       if (stringCount && !evidence.includes(stringCount)) evidence.push(stringCount);
     } else {
-      for (const constraint of ["xlr", "sans fil", "usb"]) {
+      for (const constraint of ["xlr", "sans fil", "usb", "dynamique", "cardioide"]) {
         if (latest.includes(constraint) && !evidence.includes(constraint)) evidence.push(constraint);
       }
     }
