@@ -54,6 +54,16 @@ function productIdentity(product, slot) {
   const brand = normalize(product.brand);
   if (slot.brands.length && !slot.brands.some(name =>
     brand ? normalize(name) === brand : title.startsWith(normalize(name) + " "))) return false;
+  if (slot.bass || slot.vocalMic) {
+    const identity = `${title} ${category}`;
+    if (/\b(?:housses?|etuis?|supports?|cables?|adaptateurs?|cordes? (?:pour|de)|pieces? detachees?|amplis?|amplificateurs?|enceintes?|preamplis?)\b/.test(title)) return false;
+    if (slot.bass && !/\b(?:bass guitar|basses? electriques?|electric bass|basses?|bass)\b/.test(identity)) return false;
+    if (slot.bass && /\b(?:guitare basse acoustique|basse acoustique|acoustic bass|contrebasses?|micros?|pickups?)\b/.test(identity)) return false;
+    if (slot.vocalMic && slot.wiredMic && /\b(?:sans fil|wireless|uhf|vhf)\b/.test(title)) return false;
+    if (slot.vocalMic && (!/\b(?:microphones?|micros?|microphone vocal|vocal mic)\b/.test(identity) ||
+        !/\b(?:chants?|voix|vocals?|vocale?s?|chanteurs?)\b/.test(`${identity} ${normalize(product.description)}`))) return false;
+    return !slot.names.length || familyMatches({ ...product, productType: category }, slot);
+  }
   if (slot.family === "other") return familyMatches({ ...product, productType: category }, slot);
   const accessoryPrefix = title.match(accessoryTitle)?.[0];
   const guitarPosition = title.search(explicitElectric);
@@ -108,7 +118,7 @@ function assess(product, slot, plan) {
       group.split("|").some(term => phrase(clause, normalize(term))))).length;
   const guitar = slot.family === "electric" || (slot.family === "other" &&
     /\bguitares?\b/.test(normalize([product.title, product.productType].join(" "))) &&
-    !accessoryTitle.test(normalize(product.title)));
+    !accessoryTitle.test(normalize(product.title))) || slot.bass;
   const left = leftGuitar.test(normalize([product.title, product.productType, ...(product.categories ?? [])].join(" ")));
   const wrongHand = !plan.exactProduct && guitar && left !== Boolean(plan.leftHanded);
   const excluded = wrongHand || slot.excluded.some(term => positive(clauses, clause => phrase(clause, normalize(term))));

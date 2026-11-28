@@ -154,6 +154,32 @@ export function shoppingPlan(intent, message, history, autonomous) {
   }
   const acousticAmp = /\b(?:amplis?|amplificateurs?|combos?)\b/.test(context) &&
     /\b(?:electro acoustiques?|guitares? acoustiques?)\b/.test(context);
+  const genericBass = /\bbasses? electriques?\b/.test(latest) &&
+    !/\b(?:amplis?|cordes? pour|micros?|housses?|supports?|pedales?|enceintes?)\b/.test(latest);
+  const genericVocalMic = /\b(?:micros?|microphones?)\b/.test(latest) &&
+    /\b(?:chants?|chanter|voix|vocal(?:e|es|s)?)\b/.test(latest) &&
+    !/\b(?:entrees?|prises?|enceintes?|amplis?|tables? de mixage|connecter|brancher|j ai deja|je possede)\b/.test(latest);
+  if ((genericBass || genericVocalMic) && plan.slots.length <= 1) {
+    const existing = plan.slots[0] ?? defaults;
+    const genericNames = genericBass ? /^(?:guitare )?basses?(?: electriques?)?(?: [0-9]+ cordes?)?$/
+      : /^(?:micros?|microphones?)(?:(?: (?:filaires?|xlr|dynamiques?|de chant|pour (?:le )?chant|chant|vocaux?|de scene|sans fil)))*$/;
+    const names = existing.names.filter(name => !genericNames.test(normalize(name)) && latest.includes(normalize(name)));
+    const evidence = existing.evidence.filter(term => {
+      const value = normalize(term);
+      return !genericNames.test(value) && !/^(?:pour (?:le )?chant|chant|sur scene|en stock)$/.test(value) &&
+        (latest.includes(value) || value.split("|").some(part => latest.includes(part)));
+    });
+    if (genericBass) {
+      const stringCount = latest.match(/\b[4-9] cordes?\b/)?.[0];
+      if (stringCount && !evidence.includes(stringCount)) evidence.push(stringCount);
+    } else {
+      for (const constraint of ["xlr", "sans fil", "usb"]) {
+        if (latest.includes(constraint) && !evidence.includes(constraint)) evidence.push(constraint);
+      }
+    }
+    plan.slots = [{ ...defaults, ...existing, family:"other", names, evidence, bass: genericBass, vocalMic: genericVocalMic, wiredMic: genericVocalMic && /\bfilaires?\b/.test(latest) }];
+    if (plan.question === "clarify") plan.question = "none";
+  }
   const audience = /\b(?:cinquantaine|50) (?:de )?(?:personnes|spectateurs)\b/.test(context);
   const asksMicrophone = /\b(?:microphones?|micros?)\b/.test(context);
   plan.slots = plan.slots.map(slot => {
