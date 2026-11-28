@@ -60,6 +60,7 @@ function productIdentity(product, slot) {
     if (slot.bass && !/\b(?:bass guitar|basses? electriques?|electric bass|basses?|bass)\b/.test(identity)) return false;
     if (slot.bass && /\b(?:guitare basse acoustique|basse acoustique|acoustic bass|contrebasses?|micros?|pickups?)\b/.test(identity)) return false;
     if (slot.vocalMic && slot.wiredMic && /\b(?:sans fil|wireless|uhf|vhf)\b/.test(title)) return false;
+    if (slot.vocalMic && /\b(?:bodypacks?|emetteurs?|recepteurs?|pickups?)\b/.test(title) && !/\b(?:kits?|systemes?|ensembles?)\b/.test(title)) return false;
     if (slot.vocalMic && (!/\b(?:microphones?|micros?|microphone vocal|vocal mic)\b/.test(identity) ||
         !/\b(?:chants?|voix|vocals?|vocale?s?|chanteurs?)\b/.test(`${identity} ${normalize(product.description)}`))) return false;
     return !slot.names.length || familyMatches({ ...product, productType: category }, slot);

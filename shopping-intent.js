@@ -154,6 +154,11 @@ export function shoppingPlan(intent, message, history, autonomous) {
   }
   const acousticAmp = /\b(?:amplis?|amplificateurs?|combos?)\b/.test(context) &&
     /\b(?:electro acoustiques?|guitares? acoustiques?)\b/.test(context);
+  if (acousticAmp && plan.slots.length <= 1 && /\b(?:amplis?|amplificateurs?|combos?)\b/.test(latest)) {
+    const existing = plan.slots[0] ?? defaults;
+    plan.slots = [{ ...defaults, ...existing, family: "amp" }];
+    if (plan.question === "clarify") plan.question = "none";
+  }
   const genericBass = /\bbasses? electriques?\b/.test(latest) &&
     !/\b(?:amplis?|cordes? pour|micros?|housses?|supports?|pedales?|enceintes?)\b/.test(latest);
   const genericVocalMic = /\b(?:micros?|microphones?)\b/.test(latest) &&
@@ -163,10 +168,10 @@ export function shoppingPlan(intent, message, history, autonomous) {
     const existing = plan.slots[0] ?? defaults;
     const genericNames = genericBass ? /^(?:guitare )?basses?(?: electriques?)?(?: [0-9]+ cordes?)?$/
       : /^(?:micros?|microphones?)(?:(?: (?:filaires?|xlr|dynamiques?|de chant|pour (?:le )?chant|chant|vocaux?|de scene|sans fil)))*$/;
-    const names = existing.names.filter(name => !genericNames.test(normalize(name)) && latest.includes(normalize(name)));
+    const names = existing.names.filter(name => !genericNames.test(normalize(name)) && !/^[0-9]+ cordes?$/.test(normalize(name)) && latest.includes(normalize(name)));
     const evidence = existing.evidence.filter(term => {
       const value = normalize(term);
-      return !genericNames.test(value) && !/^(?:pour (?:le )?chant|chant|sur scene|en stock)$/.test(value) &&
+      return !genericNames.test(value) && !/^(?:pour (?:le )?chant|chant|sur scene|en stock|filaires?)$/.test(value) &&
         (latest.includes(value) || value.split("|").some(part => latest.includes(part)));
     });
     if (genericBass) {
@@ -199,7 +204,7 @@ export function shoppingPlan(intent, message, history, autonomous) {
       return true;
     });
     const names = isAcousticAmp
-      ? slot.names.filter(name => !/^(?:ampli(?:ficateur)?s?|combos?)(?: (?:de |pour )?(?:guitares? ?)?(?:electro )?acoustiques?)?$/.test(normalize(name)))
+      ? slot.names.filter(name => !/^(?:(?:ampli(?:ficateur)?s?|combos?) ?)?(?:(?:de |pour )?(?:guitares? ?)?(?:electro )?acoustiques?)?$/.test(normalize(name)))
       : slot.names;
     return { ...slot, names, required, evidence, preferred, acousticAmp: isAcousticAmp };
   });
