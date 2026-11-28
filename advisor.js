@@ -131,7 +131,8 @@ function assess(product, slot, plan) {
   if (slot.family === "headphoneRig" && !required.includes("headphone")) required.push("headphone");
   const missing = required.filter(name => !proved.has(name)).length +
     slot.evidence.filter(group => !positive(clauses, clause =>
-      group.split("|").some(term => phrase(clause, normalize(term))))).length;
+      group.split("|").some(term => phrase(clause, normalize(term)))) &&
+      !group.split("|").some(term => phrase(normalize(documentedDescriptions.get(product.id)), normalize(term)))).length;
   const guitar = slot.family === "electric" || (slot.family === "other" &&
     /\bguitares?\b/.test(normalize([product.title, product.productType].join(" "))) &&
     !accessoryTitle.test(normalize(product.title))) || slot.bass;

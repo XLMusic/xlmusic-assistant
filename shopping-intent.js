@@ -233,8 +233,8 @@ export function shoppingPlan(intent, message, history, autonomous) {
   }
   const requestsMultiEffect = /\b(?:cherche|recherche|voudrais|souhaite|conseillez|acheter) (?:moi )?(?:un |des )?(?:multi effets?|multieffets?|multi effects?)\b/.test(latest) &&
     !/\b(?:sans multi effets?|plutot qu un multi effets?)\b/.test(latest);
-  if (requestsMultiEffect && plan.slots.length <= 1) {
-    const existing = plan.slots[0] ?? defaults;
+  if (requestsMultiEffect && !/\bet (?:une?|des) (?:enceintes?|guitares?|amplis?|casques?|micros?)\b/.test(latest)) {
+    const existing = plan.slots.find(item => item.effectKind === "multi") ?? defaults;
     const namedEffects = ["overdrive", "delay"].filter(effect => latest.split(" ").includes(effect));
     const evidence = existing.evidence.filter(term => {
       const text = normalize(term);
@@ -242,7 +242,10 @@ export function shoppingPlan(intent, message, history, autonomous) {
         (extraTechnical.test(text) || text.split(" ").length >= 2 && latest.includes(text)) &&
         !namedEffects.some(effect => text.split(" ").includes(effect));
     });
-    plan.slots = [{ ...defaults, ...existing, family: "other", effectKind: "multi",
+    const required = existing.required.filter(trait => new RegExp(`\\b${trait}\\b`, "i").test(latest) ||
+      trait === "headphone" && /\bcasque\b/.test(latest) ||
+      trait === "microphone" && /\bmicros?\b/.test(latest));
+    plan.slots = [{ ...defaults, ...existing, required, family: "other", effectKind: "multi",
       evidence: [...evidence, ...namedEffects] }];
     if (plan.question === "clarify" && !safeClarification) plan.question = "none";
   }

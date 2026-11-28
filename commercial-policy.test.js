@@ -84,3 +84,17 @@ test("une expression familière interprétée par l’IA conserve la distinction
   assert.match(response.reply, /classique à cordes nylon ou une folk à cordes acier/);
   assert.deepEqual(response.products, []);
 });
+
+test("la demande d’un multi-effets conserve les deux effets sans racheter l’ampli possédé", async () => {
+  const { shoppingPlan } = await import("./shopping-intent.js");
+  const message = "J’ai déjà un ampli. Je voudrais un multi-effets guitare avec overdrive et delay, maximum 200 €, en stock.";
+  const plan = shoppingPlan({ slots: [{ ...slot, family:"amp" }, { ...slot, family:"other", effectKind:"multi",
+    evidence:["avec overdrive et delay"], required:["effects","gain"] }],
+    maxCents:20000, question:"none", inStock:true }, message, [], true);
+  assert.equal(plan.slots.length, 1);
+  assert.deepEqual(plan.slots[0].evidence, ["overdrive", "delay"]);
+  const zoom = product("ZOOM-G1-FOUR", "Zoom", 99, { title:"Zoom, Multi-effets G1 Four" });
+  const services = { readLive:async()=>zoom, productLink:async()=> "https://www.xlmusic.fr/PBSCProduct.asp?ItmID=41470891" };
+  assert.equal((await advise([zoom], plan, services)).products[0].sku, zoom.id);
+  assert.deepEqual((await advise([zoom], plan, { ...services, productLink: async()=>null })).products, []);
+});
