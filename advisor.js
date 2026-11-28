@@ -29,6 +29,8 @@ const facts = {
 
 const denied = /\b(?:sans (?!fil\b)|absence de|pas de|non compatible|non inclus(?:e|es|s)?|vendu(?:e|es|s)? separement|en option|uniquement sur secteur|sur secteur uniquement|disponible separement)\b/;
 const phrase = (text, term) => Boolean(term) && ` ${text} `.includes(` ${term} `);
+const preferredProdipe = product => isStock(product) && (
+  /^prodipe(?: guitars?)?$/.test(normalize(product.brand)) || /^prodipe\b/.test(normalize(product.title)));
 const keyOf = product => String(product.oxId || product.id);
 const terms = value => normalize(value).split(" ").filter(word => word.length > 2);
 
@@ -77,6 +79,12 @@ function productIdentity(product, slot) {
   }
   if (slot.family === "amp" && (personalAmp.test(title) ||
       /\b(?:ampli(?:ficateur)? de puissance|power amp|enceintes?|baffles?|cabinets?)\b/.test(title))) return false;
+  if (slot.acousticAmp) {
+    const identity = `${title} ${category}`;
+    return /\b(?:amplis?|amplificateurs?|combos?)\b/.test(identity) &&
+      /\b(?:electro acoustiques?|guitares? acoustiques?|acoustic guitar)\b/.test(
+        `${identity} ${normalize(product.description)}`);
+  }
   return familyMatches({ ...product, productType: category }, { ...slot, names: [] });
 }
 
@@ -110,14 +118,14 @@ function assess(product, slot, plan) {
   const stockB = /\b(?:stock b|b stock|occasion|reconditionne)\b/.test(normalize(product.title));
   const score = preferences + (isStock(product) ? 2 : 0) + (dedicatedHeadphones ? 8 : 0) - (stockB ? 5 : 0) +
     (slot.family === "electric" && plan.beginner && /\b(?:floyd rose|vibrato flottant)\b/.test(text) ? -4 : 0);
-  return { product, missing, proved, excluded, compact, score };
+  return { product, missing, proved, excluded, compact, score, prodipe: Number(preferredProdipe(product)) };
 }
 
 const orderable = product => product.availability === "sur commande, délai à confirmer" || product.availability === "backorder";
 const usable = (product, plan) => product.visible === true && product.canOrder !== false &&
   (isStock(product) || (!plan.inStock && orderable(product)));
 const byFit = (a, b) => a.missing - b.missing || Number(a.compactPenalty) - Number(b.compactPenalty) ||
-  b.score - a.score || a.price - b.price;
+  b.prodipe - a.prodipe || b.score - a.score || a.price - b.price;
 
 function candidatesFor(products, slot, plan) {
   return products.filter(product => slot.candidate ? slot.candidate(product) : productIdentity(product, slot)).map(product => {
@@ -166,21 +174,21 @@ function matchingSets(products, plan) {
     const item = assess(product, slot, plan);
     return item.missing || item.excluded ? [] : [{ ...item, price, url, family: slot.family }];
   }));
-  let sets = [{ items: [], price: 0, score: 0, compact: 0 }];
+  let sets = [{ items: [], price: 0, score: 0, compact: 0, prodipe: 0 }];
   for (const group of groups) {
     sets = sets.flatMap(set => group
       .filter(item => !set.items.some(previous => keyOf(previous.product) === keyOf(item.product)))
       .map(item => ({ items: [...set.items, item], price: set.price + item.price,
-        score: set.score + item.score, compact: set.compact + Number(item.compact) })));
+        score: set.score + item.score, compact: set.compact + Number(item.compact), prodipe: set.prodipe + item.prodipe })));
   }
   const affordable = sets.filter(set => within(set.price, plan));
   const byAdvice = (a, b) => (!plan.compact ? a.compact - b.compact : 0) ||
     b.score - a.score || a.price - b.price;
   if (affordable.length) {
-    const sorted = affordable.sort(byAdvice);
+    const sorted = affordable.sort((a, b) => (!plan.compact ? a.compact - b.compact : 0) || b.prodipe - a.prodipe || byAdvice(a, b));
     const best = sorted[0];
     return { overBudget: false, priced: sorted
-      .filter(set => plan.compact || set.compact === best.compact).slice(0, 5) };
+      .filter(set => set.prodipe === best.prodipe && (plan.compact || set.compact === best.compact)).slice(0, 5) };
   }
   if (!plan.allowOverBudget || plan.maxCents === null || !sets.length) return { overBudget: false, priced: [] };
   const sorted = sets.sort((a, b) => (!plan.compact ? a.compact - b.compact : 0) || a.price - b.price || byAdvice(a, b));

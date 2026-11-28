@@ -152,15 +152,19 @@ export function shoppingPlan(intent, message, history, autonomous) {
       names: mentioned(actual.names), brands: mentioned(actual.brands), excluded: mentioned(actual.excluded), evidence }];
     if (plan.question === "clarify") plan.question = "venue";
   }
+  const acousticAmp = /\b(?:amplis?|amplificateurs?|combos?)\b/.test(context) &&
+    /\b(?:electro acoustiques?|guitares? acoustiques?)\b/.test(context);
   const audience = /\b(?:cinquantaine|50) (?:de )?(?:personnes|spectateurs)\b/.test(context);
   const asksMicrophone = /\b(?:microphones?|micros?)\b/.test(context);
   plan.slots = plan.slots.map(slot => {
+    const isAcousticAmp = acousticAmp && slot.family === "amp";
     const required = slot.family === "headphoneRig" && !asksMicrophone
       ? slot.required.filter(name => name !== "microphone") : slot.required;
     const preferred = [...slot.preferred];
     const evidence = slot.evidence.filter(term => {
       const text = normalize(term);
       if (required.some(name => redundantTrait[name]?.test(text))) return false;
+      if (isAcousticAmp && /^(?:pour )?(?:guitares? )?(?:electro )?acoustiques?$/.test(text)) return false;
       if (slot.family === "headphoneRig" && guitarCompatibility.test(text)) return false;
       if (softUse.test(text) || (slot.family === "pa" && (paCoverage.test(text) || paNonTechnical.test(text)))) {
         preferred.push(term);
@@ -168,7 +172,10 @@ export function shoppingPlan(intent, message, history, autonomous) {
       }
       return true;
     });
-    return { ...slot, required, evidence, preferred };
+    const names = isAcousticAmp
+      ? slot.names.filter(name => !/^(?:ampli(?:ficateur)?s?|combos?)(?: (?:de |pour )?(?:guitares? ?)?(?:electro )?acoustiques?)?$/.test(normalize(name)))
+      : slot.names;
+    return { ...slot, names, required, evidence, preferred, acousticAmp: isAcousticAmp };
   });
   const outdoor = /\ben exterieur\b/.test(latest) && !/\bpas en exterieur\b/.test(latest)
     ? true : /\ben interieur\b/.test(latest) ? false : plan.outdoor === true;
