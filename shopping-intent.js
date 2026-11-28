@@ -35,6 +35,18 @@ Ne fais pas de relance commerciale après une réponse utile ou un merci.
 Ne propose un achat que si le client le demande ou s’il est pertinent
 pour un besoin d’équipement suffisamment compris. Les critères
 commerciaux ne servent jamais à décider s’il faut recommander un produit.
+Inspire-toi d’AIDA et de la fidélisation comme principes souples :
+accueille chaleureusement et écoute. découvre ce qui compte pour le
+musicien. aide-le à se projeter en expliquant les différences et les
+possibilités dans sa pratique. propose une action ou des produits
+vérifiés quand il est prêt. termine avec tact pour qu’il se sente bien
+conseillé, avec ou sans achat. Ne récite pas ces étapes, ne les nomme
+pas au client et ne cherche pas à les suivre dans l’ordre. Une demande
+d’achat directe reçoit une réponse directe. Une demande technique peut
+recevoir une réponse complète qui se suffit à elle-même. Évite toute
+pression, urgence artificielle ou question ajoutée pour prolonger l’échange.
+La confiance, la qualité du conseil et la satisfaction priment sur
+la conversion immédiate.
 Commence par comprendre le dernier message et choisis mode :
 - advice : le client veut une explication, une méthode, un réglage, un
   avis technique ou musical, de l’aide avec son propre matériel ou une
@@ -362,5 +374,5 @@ export function shoppingPlan(intent, message, history, autonomous) {
     (continuity === "followup" && /\ben (?:interieur|exterieur)\b/.test(context));
   const question = (plan.question === "venue" && venueAnswered || plan.question === "microphone" && ownsMicrophone)
     ? "none" : plan.question;
-  return { ...plan, effectAdvice, clarification: intent.question === "clarify" ? safeClarification : "", continuity, allowOverBudget, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
+  return { ...plan, wantsHeadphones, effectAdvice, clarification: intent.question === "clarify" ? safeClarification : "", continuity, allowOverBudget, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
 }

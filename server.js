@@ -8,7 +8,7 @@ import { adviceFormat, adviceInstructions, advise, adviseExactProduct } from "./
 import { createProductLinkVerifier } from "./product-links.js";
 import { XMLParser } from "fast-xml-parser";
 import { createOxatis } from "./oxatis.js";
-import { addToConversation, handleConversation, recordConversation, restoreConversation } from "./conversation.js";
+import { addToConversation, handleConversation, hasCompatibilityContext, recordConversation, restoreConversation } from "./conversation.js";
 import { createCatalogStore } from "./catalog-store.js";
 import { configureCatalogAdmin, protectCatalogAdmin } from "./catalog-admin.js";
 
@@ -220,12 +220,15 @@ app.post("/api/chat",async(req,res)=>{
   const plan = shoppingPlan(intent, message, history, autonomous);
   const stringHint = ["unknown", "acoustic", "nylon", "steel", "electric"].includes(intent.stringInstrument)
    ? intent.stringInstrument : null;
-  if (!stringHint && (intent.mode === "clarify" || plan.clarification)) {
-   const memory = restoreConversation(req.body?.conversation,history,[]);
+  const clarificationNeeded = intent.mode === "clarify" || Boolean(plan.clarification);
+  const context = restoreConversation(req.body?.conversation,history,[]);
+  const clarify = memory => {
    const question = plan.clarification || "Qu’est-ce que vous souhaitez obtenir avec votre matériel actuel ?";
    const reply = [generalAdvice || plan.effectAdvice, question].filter(Boolean).join("\n\n");
    return res.json(recordConversation({reply,products:[],followUp:question},plan,memory,message));
-  }
+  };
+  if (clarificationNeeded && !stringHint && !plan.wantsHeadphones &&
+      !hasCompatibilityContext(message,context,history)) return clarify(context);
   if(useOxatis || !catalog.length) await refreshCatalog();
   if(!catalog.length)return res.status(503).json({error:"Je ne peux pas vérifier les produits pour le moment. Réessayez dans un instant."});
   const snapshot=catalog;
@@ -241,6 +244,7 @@ app.post("/api/chat",async(req,res)=>{
   const handled=await handleConversation(message,memory,snapshot,catalogServices,stringHint,
    Boolean(stringHint || intent.mode === "continuation" && memory.pending === "strings"));
   if(handled)return res.json(withAdvice(handled));
+  if (clarificationNeeded && !plan.wantsHeadphones) return clarify(memory);
   if (plan.effectAdvice && !plan.slots.length && plan.question !== "clarify") {
    return res.json(recordConversation({reply:plan.effectAdvice,products:[],followUp:null},plan,memory,message));
   }

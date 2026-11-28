@@ -138,6 +138,14 @@ function requestedBudget(message,state) {
 
 const availableBudget = (remaining,state) => remaining===null?null:remaining-Number(state.exclusive);
 
+const wirelessMicrophoneRequest = text => /\b(?:micros?|microphones?)\b/.test(text)&&/\b(?:sans fil|uhf|wireless)\b/.test(text)&&
+    !/\b(?:pas de micro sans fil|ne veux pas de micro|sans micro)\b/.test(text);
+
+export function hasCompatibilityContext(message, state, history) {
+  const hasProduct = state.items.length > 0 || history.some(turn => turn?.products?.length);
+  return hasProduct && (state.pending === "headphones" || wirelessMicrophoneRequest(normalize(message)));
+}
+
 export async function handleConversation(message,state,catalog,services,stringHint, allowStrings = true) {
   const text=normalize(message);
   if (newTopic.test(text)) {
@@ -180,8 +188,7 @@ export async function handleConversation(message,state,catalog,services,stringHi
     return result([ `Je vous propose ce jeu ${type}.`, savarez ? "Les cordes Savarez sont fabriquées en France." : null, `${p.title} · ${p.price} TTC, ${p.availability}.`,p.url].filter(Boolean).join("\n"),state,{products:[p],contextMode});
   }
 
-  const microphone=/\b(?:micros?|microphones?)\b/.test(text)&&/\b(?:sans fil|uhf|wireless)\b/.test(text)&&
-    !/\b(?:pas de micro sans fil|ne veux pas de micro|sans micro)\b/.test(text);
+  const microphone=wirelessMicrophoneRequest(text);
   const headphones=previous==="headphones"&&state.facts.headphones==="no" ||
     /\b(?:casques?|ecouteurs?)\b/.test(text)&&
       (/\b(?:pas (?:de |un )?casque|casque compatible|quel casque|un casque (?:en plus|pour aller avec))\b/.test(text)||addWords.test(text));
