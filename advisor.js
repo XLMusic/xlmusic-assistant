@@ -61,6 +61,11 @@ function productIdentity(product, slot) {
   const categoryFields = [product.productType, ...(product.categories ?? [])].filter(Boolean);
   const categories = categoryFields.flatMap(value => String(value).split(/\s*>\s*/)).map(normalize);
   const category = normalize(categoryFields.join(" "));
+  if (slot.handMic && (
+    /\b(?:serre tete|casques?|headsets?|cravates?|lavaliers?|bodypacks?|adaptateurs?)\b/.test(title) ||
+    !/\b(?:micros?|microphones?|emetteurs?)\b/.test(title) ||
+    !/\b(?:sans fil|wireless|uhf|vhf|hf|2 4 ghz)\b/.test(`${title} ${category}`)
+  )) return false;
   const brand = normalize(product.brand);
   if (slot.brands.length && !slot.brands.some(name =>
     brand ? normalize(name) === brand : title.startsWith(normalize(name) + " "))) return false;
@@ -207,7 +212,7 @@ function shortlist(products, plan) {
   const minimums = assessed.map(group => group.reduce((best, item) =>
     !item.missing && usable(item.product, plan) ? Math.min(best, item.price) : best, Infinity));
   const groups = assessed.map((group, index) => {
-    const reserved = minimums.reduce((sum, cost, other) => other !== index && Number.isFinite(cost) ? sum + cost : sum, 0);
+    const reserved = plan.compareEffects ? 0 : minimums.reduce((sum, cost, other) => other !== index && Number.isFinite(cost) ? sum + cost : sum, 0);
     const cap = plan.maxCents === null ? null : plan.maxCents - reserved;
     return prioritize(group, plan, cap);
   });
@@ -231,6 +236,12 @@ function matchingSets(products, plan) {
     const item = assess(product, slot, plan);
     return item.missing || item.excluded ? [] : [{ ...item, price, url, family: slot.family, effectKind: slot.effectKind }];
   }));
+  if (plan.compareEffects) {
+    const priced = groups.flatMap(group => group.filter(item => item.url && within(item.price, plan))
+      .sort((a, b) => compareCommercialRank(a.commercial, b.commercial) || b.score - a.score || a.price - b.price)
+      .slice(0, 1).map(item => ({items: [item], price: item.price})));
+    return { overBudget: false, priced };
+  }
   let sets = [{ items: [], price: 0, score: 0, compact: 0, commercial: [0, 0, 0, 0] }];
   for (const group of groups) {
     sets = sets.flatMap(set => group
@@ -408,7 +419,7 @@ export async function advise(products, plan, { readLive, productLink, choose, co
       products: [], followUp: question ?? null };
   }
 
-  if (plan.compareProducts && plan.slots.length === 1 && !overBudget && priced.length > 1) {
+  if (plan.compareEffects || (plan.compareProducts && plan.slots.length === 1 && !overBudget && priced.length > 1)) {
     const products = priced.map(({items: [item]}) => ({
       title: item.product.title, sku: item.product.id, price: money(item.price),
       availability: availabilityOf(item.product), url: item.url
@@ -425,7 +436,11 @@ export async function advise(products, plan, { readLive, productLink, choose, co
       const overage = extra ? `Option facultative · ${money(extra)} au-dessus de votre budget.` : null;
       return [`• ${product.title} — ${product.price} TTC, ${product.availability}.`, overage, benefit, !benefit && feature ? `Caractéristique indiquée sur la fiche : ${feature}.` : null, product.url].filter(Boolean).join("\n");
     });
-    return { reply: ["Voici les options que notre magasin peut vous proposer.", ...lines, question]
+    const opening = plan.compareEffects
+      ? priced.length > 1 ? "Voici deux options indépendantes, à choisir selon votre usage."
+        : "J’ai pu vérifier une option dans votre budget. La comparaison reste incomplète."
+      : "Voici les options que notre magasin peut vous proposer.";
+    return { reply: [opening, ...lines, question]
       .filter(Boolean).join("\n\n"), products, followUp: question ?? null, alternatives: true };
   }
 

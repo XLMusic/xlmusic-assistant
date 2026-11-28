@@ -224,8 +224,8 @@ app.post("/api/chat",async(req,res)=>{
   const exact = await adviseExactProduct(snapshot, message, catalogServices);
   if (exact) return res.json(recordConversation(withAdvice(exact),{continuity:"new",maxCents:null},null,message));
   const memory=restoreConversation(req.body?.conversation,history,snapshot);
-  const handled=await handleConversation(message,memory,snapshot,catalogServices,stringHint,
-   Boolean(stringHint || intent.mode === "continuation" && memory.pending === "strings"));
+  const handled=await handleConversation(message,memory,snapshot,catalogServices,plan.slots.length ? null : stringHint,
+   Boolean((stringHint && !plan.slots.length) || intent.mode === "continuation" && memory.pending === "strings" && !plan.slots.length));
   if(handled)return res.json(withAdvice(handled));
   if (clarificationNeeded && !plan.wantsHeadphones) return clarify(memory);
   if (plan.effectAdvice && !plan.slots.length && plan.question !== "clarify") {

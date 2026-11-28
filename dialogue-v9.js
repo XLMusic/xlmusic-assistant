@@ -27,6 +27,10 @@ peut aussi déclencher l'outil. Le changement de sujet commercial ne supprime pa
 l'historique du dialogue. Ne déduis pas un achat à partir d'un intérêt général.
 Quand tu réponds directement, n'invente aucune offre, référence, disponibilité
 ou promesse de rappel. Une recommandation de produit doit passer par l'outil.
+Renseigne stringInstrument uniquement lorsque le produit recherché est un jeu
+de cordes. Pour un instrument, utilise le slot de l’instrument. Utilise des
+preuves techniques pour les contraintes impératives, par exemple le connecteur.
+Pour le conseil direct, utilise du texte simple, sans marqueurs Markdown.
 Les renseignements magasin, les exigences de fiabilité et la philosophie
 de conseil ci-dessous s'appliquent aussi aux réponses directes.
 
@@ -43,7 +47,10 @@ export async function respondToTurn(client, model, history, message, context) {
     instructions: dialogueInstructions,
     tools: [lookupTool], parallel_tool_calls: false,
     input: [
-      ...history.map(turn => ({ role:"user", content:JSON.stringify(turn) })),
+      ...history.flatMap(turn => typeof turn === "string"
+        ? [{ role:"user", content:turn }]
+        : [{ role:"user", content:turn.message },
+          ...(turn.answer ? [{ role:"assistant", content:turn.answer }] : [])]),
       { role:"user", content:JSON.stringify({ contexteCommercial: context, dernierMessage: message }) }
     ]
   });

@@ -422,5 +422,13 @@ export function shoppingPlan(intent, message, history, autonomous) {
     (continuity === "followup" && /\ben (?:interieur|exterieur)\b/.test(context));
   const question = (plan.question === "venue" && venueAnswered || plan.question === "microphone" && ownsMicrophone)
     ? "none" : plan.question;
-  return { ...plan, wantsHeadphones, effectAdvice, clarification: intent.question === "clarify" ? safeClarification : "", continuity, allowOverBudget: allowOverBudget && !explicitMaximum, flexibleComparison, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
+  const handMic = /\b(?:micro(?:phone)?s?(?: sans fil)? (?:a (?:la )?)?main|emetteurs? (?:a (?:la )?)?main)\b/.test(context);
+  if (handMic) {
+    plan.slots = plan.slots.map(slot => ({ ...slot, handMic: true,
+      evidence: /\bxlr\b/.test(context) && !slot.evidence.includes("xlr") ? [...slot.evidence, "xlr"] : slot.evidence }));
+  }
+  const compareEffects = /\b(?:compar\w*|ou|versus|plutot)\b/.test(latest) &&
+    plan.slots.length === 2 && plan.slots.some(slot => slot.effectKind === "pedal") &&
+    plan.slots.some(slot => slot.effectKind === "multi");
+  return { ...plan, compareEffects, wantsHeadphones, effectAdvice, clarification: intent.question === "clarify" ? safeClarification : "", continuity, allowOverBudget: allowOverBudget && !explicitMaximum, flexibleComparison, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
 }
