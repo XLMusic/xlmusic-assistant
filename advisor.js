@@ -234,6 +234,14 @@ function matchingSets(products, plan) {
   if (affordable.length) {
     const sorted = affordable.sort((a, b) => (!plan.compact ? a.compact - b.compact : 0) || compareCommercialRank(a.commercial, b.commercial) || byAdvice(a, b));
     const best = sorted[0];
+    if (plan.compareProducts && plan.slots.length === 1) {
+      const eligible = sorted.filter(set => set.items[0].url && (plan.compact || set.compact === best.compact));
+      if (eligible.length) {
+        const priceOrder = [...eligible].sort((a, b) => a.price - b.price);
+        return { overBudget: false, priced: [...new Set([priceOrder[0], eligible[0], priceOrder.at(-1)])]
+          .sort((a, b) => a.price - b.price) };
+      }
+    }
     return { overBudget: false, priced: sorted
       .filter(set => compareCommercialRank(set.commercial, best.commercial) === 0 && (plan.compact || set.compact === best.compact)).slice(0, 5) };
   }
@@ -366,6 +374,19 @@ export async function advise(products, plan, { readLive, productLink, choose, co
     const soldOut = [...unavailable].map(title => `${title} est actuellement indisponible.`);
     return { reply: [...(soldOut.length ? soldOut : [opening]), question].filter(Boolean).join("\n\n"),
       products: [], followUp: question ?? null };
+  }
+
+  if (plan.compareProducts && plan.slots.length === 1 && !overBudget && priced.length > 1) {
+    const products = priced.map(({items: [item]}) => ({
+      title: item.product.title, sku: item.product.id, price: money(item.price),
+      availability: availabilityOf(item.product), url: item.url
+    }));
+    const lines = products.map((product, index) => {
+      const benefit = benefitsFor(priced[index].items[0], plan)[0];
+      return [`• ${product.title} — ${product.price} TTC, ${product.availability}.`, benefit, product.url].filter(Boolean).join("\n");
+    });
+    return { reply: ["Voici les options que notre magasin peut vous proposer.", ...lines, question]
+      .filter(Boolean).join("\n\n"), products, followUp: question ?? null, alternatives: true };
   }
 
   const options = priced.map(set => ({ total: set.price, items: set.items.map(item => ({

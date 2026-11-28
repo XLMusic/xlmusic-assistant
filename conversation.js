@@ -35,7 +35,7 @@ export function restoreConversation(value, history, products) {
   }
   const turns = history.filter(turn=>typeof turn==="object");
   if (!state.items.length) {
-    const prior = [...turns].reverse().find(turn=>turn.products?.length);
+    const prior = [...turns].reverse().find(turn=>turn.products?.length && !turn.alternatives);
     state.items = (prior?.products ?? []).flatMap(title=>{
       const found = products.filter(p=>normalize(p.title)===normalize(title));
       return found.length===1 ? [found[0].id] : [];
@@ -297,7 +297,8 @@ export function recordConversation(resultValue,plan,state,message) {
     state.exclusive=plan.exclusive===true;
   }
   state.budget=requestedBudget(message,state);
-  if (resultValue.products.length) state.items=[...new Set(resultValue.products.map(p=>p.sku).filter(Boolean))].slice(0,3);
+  if (resultValue.alternatives) state.items=[];
+  else if (resultValue.products.length) state.items=[...new Set(resultValue.products.map(p=>p.sku).filter(Boolean))].slice(0,3);
   const q=questionKind(resultValue.followUp);
   if (q&&(state.facts[q]||state.asked.includes(q))) {
     const cleaned=resultValue.reply.split("\n\n").filter(part=>!(part.includes("?")&&questionKind(part)===q));
