@@ -245,10 +245,11 @@ export function shoppingPlan(intent, message, history, autonomous) {
   const explicitPair = /\b(?:une guitare(?: electrique)? et (?:un |l )ampli|un ampli et une guitare(?: electrique)?)\b/.test(latest) &&
     /\b(?:electrique|rock|metal)\b/.test(latest) &&
     !/\b(?:sans ampli|je possede|j ai deja|casque|cable|housse|pedales?|sangle|accessoires?|guitare acoustique|guitare classique)\b/.test(latest);
-  const revisedGuitarComparison = continuity === "followup" && plan.compareProducts &&
-    /\b(?:guitare|comparez|comparaison)\b/.test(latest) &&
+  const revisedGuitarComparison = continuity === "followup" &&
+    /\b(?:guitare|comparez|comparaison|quels? choix|quelles? options)\b/.test(latest) &&
     previousMessages.some(text => /\bguitares? electriques?\b/.test(normalize(text))) &&
     plan.slots.some(slot => slot.family === "electric" || slot.itemRole === "instrument");
+  if (revisedGuitarComparison) plan.compareProducts = true;
   const onlyGuitars = revisedGuitarComparison || /\b(?:quelles?|comparez|compare|comparaison|cherche|recherche|avez vous|conseill(?:ez|er))\b.*\bguitares? electriques?\b/.test(latest) &&
     !/\b(?:ampli|casque|cordes|capodastre|housse|pedale|je possede|j ai deja|accessoires?)\b/.test(latest);
   const wantsHeadphones = /\b(?:jouer|jeu) au casque\b/.test(latest) &&
@@ -426,13 +427,14 @@ export function shoppingPlan(intent, message, history, autonomous) {
     (continuity === "followup" && /\ben (?:interieur|exterieur)\b/.test(context));
   const question = (plan.question === "venue" && venueAnswered || plan.question === "microphone" && ownsMicrophone)
     ? "none" : plan.question;
-  const asksForWiredHeadphones = /\bcasques?\b/.test(context) &&
+  const asksForWiredHeadphones = /\bcasques?\b/.test(normalize([...previousMessages, message].join(" "))) &&
     /\b(?:filaire|casque a brancher)\b/.test(context) &&
     !/\b(?:sans ampli|micro main|micro casque|emetteur casque)\b/.test(context);
   if (asksForWiredHeadphones && plan.slots.length === 1 && !revisedGuitarComparison && !onlyGuitars &&
-      !plan.slots.some(slot => slot.family === "electric" || slot.family === "amp" || slot.effectKind === "pedal" || slot.effectKind === "multi")) {
+      !plan.slots.some(slot => slot.family === "electric" || slot.effectKind === "pedal" || slot.effectKind === "multi")) {
     const slot = plan.slots[0];
-    plan.slots = [{ ...slot, wiredHeadphone:true, names:[], brands:slot.brands.filter(brand =>
+    plan.compareProducts = true;
+    plan.slots = [{ ...slot, family:"other", wiredHeadphone:true, names:[], brands:slot.brands.filter(brand =>
       latest.includes(normalize(brand)) && !/boss/.test(normalize(brand))), required:[],
       evidence:slot.evidence.filter(term => /\b(?:3 5 mm|6 35 mm|jack)\b/.test(normalize(term)) && latest.includes(normalize(term))) }];
   }
