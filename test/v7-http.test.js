@@ -72,17 +72,17 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
         assert.equal(body.parallel_tool_calls, false);
         const message = JSON.parse(body.input.at(-1).content).dernierMessage;
         if (adviceReplies.has(message)) {
-          assert.match(body.input[0].content, /Savarez/);
+          assert.match(body.input.find(turn => turn.role === "assistant").content, /Savarez/);
           return Response.json({ object:"response", status:"completed", output:[{ type:"message", content:[
             { type:"output_text", text:adviceReplies.get(message) }
           ] }] });
         }
         if (message === outdoors || message === soundRequest) {
           if (message === outdoors) {
-            const anchor = JSON.parse(body.input[0].content);
-            assert.equal(anchor.message, soundRequest);
-            assert.match(anchor.question, /intérieur/);
-            assert.deepEqual(anchor.products, [speaker.title]);
+            assert.deepEqual(body.input[0], { role:"user", content:soundRequest });
+            assert.equal(body.input[1].role, "assistant");
+            assert.match(body.input[1].content, /intérieur/);
+            assert.ok(body.input[1].content.includes(speaker.title));
           }
           output = { ...intent, slots:[{family:"pa", names:[], brands:[], required:["battery","bluetooth","microphone"],
             evidence:[], excluded:[], preferred:[]}], maxCents:null, inStock:false,
@@ -200,7 +200,7 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
   assert.equal(first.contextMode, "new");
   assert.equal(first.products[0].title, speaker.title);
   const continuation = await http("/api/chat", { message: outdoors, history: [{
-    message: soundRequest, question: first.followUp, products: first.products.map(item => item.title)
+    message: soundRequest, answer: first.reply, question: first.followUp, products: first.products.map(item => item.title)
   }] });
   assert.equal(continuation.status, 200);
   const followup = JSON.parse(continuation.text);
