@@ -68,6 +68,13 @@ test("le libellé Stock Internet est reconnu sans assimiler en stock à stock ma
   assert.equal(make("Stock magasin").stockSource, "store");
   assert.equal(make("").stockSource, null);
   assert.equal(make("").availability, "in stock");
+  const dropship = normalizeProduct({ Visible:"true", ShowIfOutOfStock:"true", QuantityInStock:{Value:"0"},
+    SaleIfOutOfStock:"true", SaleIfOutOfStockScenario:"2" });
+  assert.equal(dropship.stockSource, "supplier");
+  assert.equal(dropship.canOrder, true);
+  const unavailable = normalizeProduct({ Visible:"true", QuantityInStock:{Value:"0"},
+    SaleIfOutOfStock:"false", SaleIfOutOfStockScenario:"2" });
+  assert.equal(unavailable.stockSource, null);
 });
 
 test("une expression familière interprétée par l’IA conserve la distinction nylon/acier", async () => {

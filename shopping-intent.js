@@ -265,8 +265,9 @@ export function shoppingPlan(intent, message, history, autonomous) {
   plan.slots = plan.slots.map(slot => {
     const isAcousticAmp = acousticAmp && slot.family === "amp";
     const isEffect = ["pedal", "multi"].includes(slot.effectKind);
-    const required = isEffect && /\boverdrive\b/.test(context)
-      ? slot.required.filter(name => name !== "gain")
+    const required = isEffect
+      ? slot.required.filter(name => !(name === "gain" && /\boverdrive\b/.test(context)) &&
+        !(name === "effects" && slot.effectKind === "multi"))
       : isAcousticAmp && !/\b(?:micros?|voix|chant|xlr)\b/.test(context)
       ? slot.required.filter(name => name !== "microphone")
       : slot.family === "headphoneRig" && !asksMicrophone

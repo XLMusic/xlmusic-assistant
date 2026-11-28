@@ -145,6 +145,8 @@ export function normalizeProduct(row) {
   const quantity = Number.isSafeInteger(stock) ? Math.max(0, stock) : null;
   const canOrder = quantity !== null && (quantity > 0 ||
     (bool(row.SaleIfOutOfStock) && row.SaleIfOutOfStockScenario !== "3"));
+  // For XLMusic, scenario 2 is the EBP cause « Stock Internet ».
+  const dropship = quantity === 0 && canOrder && String(row.SaleIfOutOfStockScenario) === "2";
   const available = quantity === null ? "" : quantity > 0 ? "in stock" :
     canOrder ? "sur commande, délai à confirmer" : "out of stock";
   const daysToShip = bool(row.ShowDaysToship ?? row.ShowDaysToShip) ? integer(row.DaysToShip) : null;
@@ -172,7 +174,7 @@ export function normalizeProduct(row) {
     discountRulePresent,
     showStockLevel: bool(row.ShowStockLevel),
     quantity,
-    stockSource: /^stock internet$/i.test(clean(row.QuantityInStock?.Append)) ? "supplier" :
+    stockSource: dropship || /^stock internet$/i.test(clean(row.QuantityInStock?.Append)) ? "supplier" :
       /^stock magasin$/i.test(clean(row.QuantityInStock?.Append)) ? "store" : null,
     availability: available
   };
