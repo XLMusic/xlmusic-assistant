@@ -59,6 +59,23 @@ function stringKind(text) {
   return null;
 }
 
+function stringsForCatalogGuitar(text, catalog) {
+  const instruments = catalog.filter(product => {
+    const category = normalize([product.productType, ...(product.categories ?? [])].join(" "));
+    const title = normalize(product.title);
+    if (!/\bguitares?\b/.test(category) ||
+        /\b(?:cordes?|amplis?|accessoires?|housses?|etuis?|supports?)\b/.test(category)) return false;
+    if (/\b(?:cordes? (?:pour|de)|jeux? de cordes|guitar strings?|housses?|etuis?)\b/.test(title)) return false;
+    return [normalize(product.id), title].some(identity =>
+      identity.length >= 5 && ` ${text} `.includes(` ${identity} `));
+  });
+  const kinds = new Set(instruments.map(product =>
+    stringKind(normalize([product.productType, ...(product.categories ?? []), product.title].join(" ")))));
+  if (kinds.size !== 1) return null;
+  const [kind] = kinds;
+  return kind === "acoustic" ? null : kind;
+}
+
 const stringQuestion = kind => kind === "acoustic"
   ? "C’est une classique à cordes nylon ou une folk à cordes acier ? Si vous hésitez, donnez-moi la marque et le modèle inscrits sur la guitare."
   : "Vous jouez sur une électrique, une classique à cordes nylon ou une folk à cordes acier ?";
@@ -127,11 +144,15 @@ export async function handleConversation(message,state,catalog,services) {
   const previous=state.pending;
   answerFacts(message,state);
   if (previous && state.facts[previous]) state.pending=null;
-  const requestsStrings=/\bcordes?\b/.test(text)&&/\bguitare\b/.test(text);
-  const kind=stringKind(text);
+  const requestsStrings=/\bcordes?\b/.test(text.replace(/\b\d+ cordes?\b/g, "")) && /\bguitare\b/.test(text);
+  const namedGuitar = requestsStrings || state.topic === "strings"
+    ? stringsForCatalogGuitar(text, catalog) : null;
+  const explicitKind = stringKind(text);
+  const kind = namedGuitar && (!explicitKind || explicitKind === "acoustic") ? namedGuitar : explicitKind;
   if (requestsStrings || (state.topic==="strings" && (kind || previous==="strings" && text.split(" ").length<=6))) {
     const contextMode=state.topic==="strings"?"followup":"new";
     if (contextMode==="new") {state=empty();state.topic="strings";}
+    state.budget=requestedBudget(message,state);
     if (kind) state.facts.strings=kind;
     const material=state.facts.strings;
     if (!material || material==="acoustic") {
@@ -141,14 +162,20 @@ export async function handleConversation(message,state,catalog,services) {
       const prompt=same?"Regardez les trois cordes les plus fines : si elles sont en nylon, c’est une classique. Si elles sont métalliques, c’est généralement une folk. Une marque et un modèle suffisent aussi.":question;
       return result(prompt,state,{followUp:same?null:question,contextMode});
     }
-    state.budget=requestedBudget(message,state);
-    const selected=await advise(catalog,accessoryPlan(p=>guitarStrings(p,material),availableBudget(state.budget,state)),services);
+    const fits = product => guitarStrings(product, material);
+    const isSavarez = product => normalize(product.brand) === "savarez" ||
+      /^savarez\b/.test(normalize(product.title));
+    const maxCents = availableBudget(state.budget, state);
+    const preferred = await advise(catalog, accessoryPlan(product => isSavarez(product) && fits(product), maxCents), services);
+    const savarez = preferred.products.length > 0;
+    const selected = savarez ? preferred : await advise(catalog.filter(product => !isSavarez(product)),
+      accessoryPlan(fits, maxCents), services);
     state.pending=null;
     state.items=selected.products.map(p=>p.sku);
     if (!selected.products.length) return result("Je n’ai pas trouvé de jeu adapté en stock. Si vous me donnez la marque et le modèle de votre guitare, je pourrai affiner.",state,{contextMode});
     const p=selected.products[0];
     const type={nylon:"nylon pour guitare classique",steel:"acier pour guitare folk",electric:"pour guitare électrique"}[material];
-    return result([ `Je vous propose ce jeu ${type}.`, `${p.title} · ${p.price} TTC, ${p.availability}.`,p.url].filter(Boolean).join("\n"),state,{products:[p],contextMode});
+    return result([ `Je vous propose ce jeu ${type}.`, savarez ? "Les cordes Savarez sont fabriquées en France." : null, `${p.title} · ${p.price} TTC, ${p.availability}.`,p.url].filter(Boolean).join("\n"),state,{products:[p],contextMode});
   }
 
   const microphone=/\b(?:micros?|microphones?)\b/.test(text)&&/\b(?:sans fil|uhf|wireless)\b/.test(text)&&
@@ -163,6 +190,14 @@ export async function handleConversation(message,state,catalog,services) {
       return result("Je ne peux plus confirmer le panier précédent en stock. Souhaitez-vous que je recherche un nouvel ensemble complet ?",state);
     }
     const family=headphones?"headphones":"wireless";
+    const includedPair = family === "wireless" && anchors.find(item => productPorts(item.fresh).wirelessIncluded >= 2);
+    if (includedPair && /\b(?:deuxieme|second|deux)\b/.test(text) &&
+        !/\b(?:troisieme|trois|separe|independant|en plus des deux)\b/.test(text)) {
+      const total = anchors.reduce((sum, item) => sum + cents(item.fresh.price), 0);
+      state.pending = null;
+      return result(`Le ${includedPair.view.title} est livré avec deux micros main sans fil UHF. Pour utiliser deux micros, le matériel retenu suffit. Total : ${money(total)} TTC, hors livraison.`,
+        state, {products: anchors.map(item => item.view)});
+    }
     const anchor=anchors.find(item=>family==="headphones"?productPorts(item.fresh).headphoneOut:(productPorts(item.fresh).paXlrIn||productPorts(item.fresh).paJackIn));
     if (!anchor) return result(family==="headphones"
       ? "Pour trouver le bon casque, il me faut le format de la sortie casque de votre appareil."

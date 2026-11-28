@@ -1,10 +1,11 @@
 import { normalize } from "./recommendations.js";
 
 // Supplement catalog descriptions only when the exact published SKU matches.
-// Fender manufacturer specifications and the XLMusic Aeris product sheet.
+// Fender specifications, XLMusic Aeris sheet and Mac Mah Mobile Pro manual.
 const documented = {
   "231-1600-000": { headphoneOut: true },
-  MACAERIS110: { paXlrIn: true, paJackIn: true, wirelessIncluded: true }
+  MACAERIS110: { paXlrIn: true, paJackIn: true, wirelessIncluded: 1 },
+  MACMOBILEPRO12: { paJackIn: true, wirelessIncluded: 2 }
 };
 
 const audio = product => normalize([product.title,product.productType,...(product.categories??[])].join(" "));
@@ -21,8 +22,8 @@ export function productPorts(product) {
     headphoneOut: known.headphoneOut || /\b(?:sortie|prise) (?:jack |mini jack )?(?:casque|headphones?)\b.{0,45}\b(?:3 5|3 50|1 8)\b|\b(?:3 5|1 8)\b.{0,32}\b(?:sortie|prise) (?:casque|headphones?)\b/.test(text),
     paXlrIn: known.paXlrIn || /\b(?:entrees?|prises?) (?:micro |mic |ligne |micro ligne |mic ligne |combo ){0,4}xlr\b/.test(text),
     paJackIn: known.paJackIn || /\b(?:entrees?|prises?) (?:micro |mic |ligne |micro ligne |mic ligne |combo ){0,4}(?:xlr )?jack(?: 6 35)?\b/.test(text),
-    wirelessIncluded: known.wirelessIncluded ||
-      /\b(?:micro(?:phone)?(?: uhf)? sans fil|micro(?:phone)? uhf) (?:inclus|fourni|livre)\b/.test(text)
+    wirelessIncluded: known.wirelessIncluded ?? Number(
+      /\b(?:micro(?:phone)?(?: uhf)? sans fil|micro(?:phone)? uhf) (?:inclus|fourni|livre)\b/.test(text))
   };
 }
 
