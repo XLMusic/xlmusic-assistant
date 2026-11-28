@@ -76,8 +76,8 @@ test("V8 1 — le panier débutant rock privilégie le format standard, propose 
     assert.ok(options.every(option => option.items.every(item => !item.title.includes("Mikro"))));
     return { option: 999, benefits: [-1, 999] };
   } });
-  assert.deepEqual(titles(reply), [squier.title, amp.title]);
-  assert.match(reply.reply, /327,00\s*€ TTC/);
+  assert.deepEqual(titles(reply), [ibanez200.title, amp.title]);
+  assert.match(reply.reply, /328,00\s*€ TTC/);
   assert.match(reply.reply, /débuter le rock/);
   assert.match(reply.reply, /saturation/);
   assert.equal(reply.products.filter(item => item.url).length, 2);
@@ -99,11 +99,11 @@ test("V8 2 — une recherche autonome après le panier repart avec un seul achat
 });
 
 test("V8 3 — 150 € ne donne aucun accessoire et l’alternative vérifiée coûte 49 € de plus", async () => {
-  const shopping = plan(intent([slot("electric")]), lowBudget);
+  const shopping = plan(intent([slot("electric")]), lowBudget + " Je peux dépasser.");
   const reply = await advise(catalog, shopping, services);
   assert.deepEqual(titles(reply), [squier.title]);
   assert.match(reply.reply, /199,00\s*€ TTC, soit 49,00\s*€ au-dessus/);
-  const strict = plan(intent([slot("electric")]), lowBudget + " Aucun dépassement.");
+  const strict = plan(intent([slot("electric")]), lowBudget);
   const rejected = await advise(catalog, strict, services);
   assert.deepEqual(rejected.products, []);
   assert.doesNotMatch(rejected.reply, /199|Squier|accessoire/i);
@@ -137,7 +137,7 @@ test("V8 5 — une enceinte autonome, puis un suivi extérieur avec micro déjà
 });
 
 test("V8 — le prix, le stock, les preuves techniques et le lien estimés ne valent pas validation", async () => {
-  const shopping = plan(intent([slot("electric")]), lowBudget);
+  const shopping = plan(intent([slot("electric")]), lowBudget + " Je peux dépasser.");
   const result = await advise([squier, mikro], shopping, {
     ...services,
     readLive: async id => id === squier.oxId ? { ...squier, price: "220 EUR" } : { ...mikro, visible: false }
@@ -159,7 +159,7 @@ test("V8 — le prix, le stock, les preuves techniques et le lien estimés ne va
 test("V8 — une hausse du prix du panier est recalculée en TTC avant et après refus de dépassement", async () => {
   const changed = { ...services, readLive: async id => id === amp.oxId ? { ...amp, price: "205 EUR" } : services.readLive(id) };
   const parsed = intent([slot("electric"), slot("amp")]);
-  const result = await advise([amp, squier, mikro], plan(parsed, guitarAndAmp), changed);
+  const result = await advise([amp, squier, mikro], plan(parsed, guitarAndAmp + " Je peux dépasser."), changed);
   assert.match(result.reply, /404,00\s*€ TTC, soit 4,00\s*€ au-dessus/);
   assert.match(result.reply, /Total du matériel, hors livraison · 404,00\s*€ TTC/);
   const strict = await advise([amp, squier, mikro], plan(parsed, guitarAndAmp + " Pas plus de 400 €."), changed);
@@ -218,7 +218,7 @@ test("V8 — le suivi conserve un budget omis et accepte son abandon explicite",
 
 test("V8 — une guitare 7 cordes reste un instrument et un appareil casque peut être classé en accessoires", async () => {
   const seven = product("115", "Guitare électrique 7 cordes", 135, { productType: "Guitares électriques" });
-  const instrument = await advise([seven], plan(intent([slot("electric")]), lowBudget), {
+  const instrument = await advise([seven], plan(intent([slot("electric")]), lowBudget + " Je peux dépasser."), {
     ...services, readLive: async () => seven
   });
   assert.deepEqual(titles(instrument), [seven.title]);
@@ -233,7 +233,7 @@ test("V8 — le volume des appels Oxatis reste plafonné sur un catalogue de 2 7
   const large = Array.from({ length: 2718 }, (_, index) =>
     product(String(20000 + index), "Guitare électrique " + index, 199 + index));
   let checks = 0;
-  const result = await advise(large, plan(intent([slot("electric")]), lowBudget), {
+  const result = await advise(large, plan(intent([slot("electric")]), lowBudget + " Je peux dépasser."), {
     ...services, readLive: async id => {
       checks++;
       return large[Number(id) - 20000];
@@ -327,7 +327,7 @@ test("un jeu de cordes nommé en anglais ne peut jamais remplir le panier guitar
   const api = {readLive:async id=>choices.find(item=>item.oxId===id),productLink:async()=>null};
   const basket = await advise(choices, plan(intent([slot("electric"),slot("amp")]), guitarAndAmp), api);
   assert.deepEqual(titles(basket), [squier.title,amp.title]);
-  const low = await advise(choices, plan(intent([slot("other")]), lowBudget), api);
+  const low = await advise(choices, plan(intent([slot("other")]), lowBudget + " Je peux dépasser."), api);
   assert.deepEqual(titles(low), [squier.title]);
   assert.match(low.reply, /49,00/);
 });
@@ -370,7 +370,7 @@ test("une enceinte garde les vérifications techniques sans exiger une jauge ins
 test("un combo n’est jamais la guitare demandée, même classé parmi les électriques", async () => {
   const combo = product("814","Orange, Combos guitare CRUSH20 Black - 20 W",147,{productType:"Guitares Electriques"});
   const parts=[combo,squier];
-  const suitable = await advise(parts, plan(intent([slot("electric")]), lowBudget), {
+  const suitable = await advise(parts, plan(intent([slot("electric")]), lowBudget + " Je peux dépasser."), {
     readLive:async id=>parts.find(p=>p.oxId===id),productLink:async()=>null
   });
   assert.deepEqual(titles(suitable),[squier.title]);
