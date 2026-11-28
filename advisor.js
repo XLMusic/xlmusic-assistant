@@ -148,6 +148,16 @@ function assess(product, slot, plan) {
   const proved = new Set(Object.entries(facts)
     .filter(([, pattern]) => positive(clauses, text => pattern.test(text)))
     .map(([name]) => name));
+  if (slot.family === "electric") {
+    const guitarFeatures = {
+      coilSplit: /\b(?:coil split|split coil|split(?:table|tables)? (?:du |des )?micros?)\b/,
+      lockingTuners: /\b(?:mecaniques? a blocage|locking tuners?)\b/,
+      stainlessFrets: /\b(?:frettes? (?:en )?(?:acier )?inoxydables?|stainless steel frets?)\b/
+    };
+    for (const [name, pattern] of Object.entries(guitarFeatures)) {
+      if (positive(clauses, text => pattern.test(text))) proved.add(name);
+    }
+  }
   // The original classifier recognizes a subset of French phrasing. Include its
   // positive evidence as well, except for microphone bundles without an input.
   for (const [name, pattern] of Object.entries(traits)) {
@@ -298,7 +308,10 @@ const explanations = {
   gain: "Le circuit de saturation vous donne accès à des sons rock depuis l’ampli.",
   tuner: "L’accordeur intégré permet de vérifier l’accordage sans ajouter un appareil.",
   effects: "Les effets intégrés permettent de varier les sons pendant les répétitions.",
-  portable: "Le format facilite le transport pour les répétitions ou petites prestations."
+  portable: "Le format facilite le transport pour les répétitions ou petites prestations.",
+  coilSplit: "Le split du micro double donne accès à des sons clairs plus fins pour varier les rythmiques.",
+  lockingTuners: "Les mécaniques à blocage simplifient le montage des cordes.",
+  stainlessFrets: "Les frettes en acier inoxydable résistent mieux à l’usure."
 };
 const genericBenefit = {
   electric: "Vous pouvez partir sur cette guitare électrique pour votre recherche.",
@@ -310,7 +323,7 @@ const genericBenefit = {
 
 function upgradeTraits(candidate, baseline, plan) {
   const relevant = new Set(plan.slots.flatMap(slot => slot.required));
-  const usage = { electric: ["pickup"], amp: ["gain", "effects", "headphone"],
+  const usage = { electric: ["pickup", "coilSplit", "lockingTuners", "stainlessFrets"], amp: ["gain", "effects", "headphone"],
     pa: ["battery", "bluetooth", "microphone", "portable"],
     headphoneRig: ["tuner", "effects", "simpleControls"] };
   for (const trait of usage[candidate.family] ?? []) relevant.add(trait);
@@ -350,8 +363,11 @@ option. Les informations manquantes ne sont pas des caractéristiques.`;
 
 export function availabilityOf(product) {
   const days = product.daysToShip;
-  const state = isStock(product) ? "en stock" : "sur commande";
-  if (Number.isInteger(days) && days >= 0) {
+  const state = isStock(product)
+    ? product.stockSource === "store" ? "en stock magasin"
+      : product.stockSource === "supplier" ? "disponible en ligne" : "en stock, retrait magasin à confirmer"
+    : "sur commande";
+  if (Number.isInteger(days) && days > 0) {
     return `${state}, expédition indiquée sous ${days} jour${days === 1 ? "" : "s"}`;
   }
   return isStock(product) ? state : `${state}, délai à confirmer`;
@@ -433,9 +449,11 @@ export async function advise(products, plan, { readLive, productLink, choose, co
       const reference = priced.findLast(set => set.price <= plan.maxCents);
       const feature = descriptions(choice.items[0].product).slice(1).find(line =>
         /\b(?:micros?|humbuckers?|manche|touche|chevalet|diapason|frettes)\b/.test(line) && line.length <= 105);
-      const benefit = extra
+      const effectBenefit = choice.items[0].effectKind === "multi"
+        ? documentedDescriptions.get(choice.items[0].product.id) : null;
+      const benefit = effectBenefit || (extra
         ? upgradeTraits(choice.items[0], reference.items[0], plan).map(trait => explanations[trait]).join(" ")
-        : benefitsFor(choice.items[0], plan).find(text => text !== genericBenefit[choice.items[0].family]);
+        : benefitsFor(choice.items[0], plan).find(text => text !== genericBenefit[choice.items[0].family]));
       const overage = extra ? `Option facultative · ${money(extra)} au-dessus de votre budget.` : null;
       return [`• ${product.title} — ${product.price} TTC, ${product.availability}.`, overage, benefit, !benefit && feature ? `Caractéristique indiquée sur la fiche : ${feature}.` : null, product.url].filter(Boolean).join("\n");
     });

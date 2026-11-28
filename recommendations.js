@@ -63,7 +63,7 @@ export function cents(value) {
 
 function withExplicitBudget(plan, message) {
   const amount = "[0-9]+(?:[ \\u00a0\\u202f][0-9]{3})*(?:[,.][0-9]{1,2})?";
-  const qualified = new RegExp(`(moins de|en dessous de|inférieur à|au maximum|maximum(?: de)?|jusqu['’]à|budget(?: total| global)?(?: de| à| est de)?|autour de|pas plus de)\\s*(${amount})\\s*(?:€|euros?\\b|eur\\b)`, "giu");
+  const qualified = new RegExp(`(moins de|en dessous de|inférieur à|au maximum|maximum(?: de)?|jusqu['’]à|budget(?: total| global| de référence)?(?: de| à| est(?: de)?)?|autour de|pas plus de)\\s*(${amount})\\s*(?:€|euros?\\b|eur\\b)`, "giu");
   const ceiling = [...message.matchAll(qualified)].at(-1);
   const amounts = [...message.matchAll(new RegExp(`(${amount})\\s*(?:€|euros?\\b|eur\\b)`, "giu"))];
   // Defer when different amounts may represent different budgets.
