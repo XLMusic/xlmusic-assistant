@@ -1,9 +1,14 @@
 import { applyExplicitConstraints, intentFormat, intentInstructions, normalize } from "./recommendations.js";
 
-const slot = intentFormat.schema.properties.slots.items;
+const baseSlot = intentFormat.schema.properties.slots.items;
+const effectKind = { type: "string", enum: ["none", "pedal", "multi"] };
+const slot = { ...baseSlot, properties: { ...baseSlot.properties, effectKind }, required: [...baseSlot.required, "effectKind"] };
 const properties = {
   ...intentFormat.schema.properties,
   slots: { type: "array", items: slot },
+  clarification: { type: "string" },
+  effectAdvice: { type: "string" },
+  stringInstrument: { type: "string", enum: ["none", "unknown", "acoustic", "nylon", "steel", "electric"] },
   addition: { type: "boolean" },
   continuity: { type: "string", enum: ["new", "followup"] },
   allowOverBudget: { type: "boolean" },
@@ -18,6 +23,37 @@ export const shoppingFormat = {
 
 export const shoppingInstructions = `
 Tu conseilles les clients de XLMusic (instruments, sono, éclairage).
+Interprète le langage familier, les synonymes, les approximations et les
+expressions de débutants grâce à tes connaissances générales. Respecte les
+mots du client et son niveau. Explique les différences simplement, sans
+condescendance ni correction de vocabulaire. Si une ambiguïté peut changer
+le choix ou la compatibilité, utilise question=clarify et clarification
+pour poser une seule question claire, éventuellement précédée d’une
+brève explication. Sinon clarification est une chaîne vide.
+stringInstrument est none sauf pour une demande de cordes de guitare ou
+sa réponse de suivi. Dans ce cas, utilise le type confirmé par le client
+ou indiqué par un modèle connu avec certitude. Utilise unknown si le
+type est incertain et acoustic si la guitare est acoustique sans savoir
+si elle est classique ou folk. « Guitare sèche » seule donne acoustic.
+Ne déduis pas nylon ou acier à partir du style ou du niveau du client.
+Pour les effets, utilise tes connaissances musicales et techniques pour
+interpréter les sons décrits et les références à des artistes ou groupes.
+Une référence artistique exprime une intention sonore, sans prétendre
+connaître le matériel exact de l’artiste. Identifie le matériel déjà
+possédé, le son recherché et le budget avant d’ajouter un article. Pose une
+question ciblée si une précision change le conseil. Décris une pédale,
+plusieurs effets complémentaires ou un multi-effets selon le besoin, sans
+forcer un format que le client n’a pas demandé. Pour chaque achat d’effet,
+utilise family=other, effectKind=pedal ou multi et des noms techniques
+précis français et anglais désignant le type d’effet, sans recopier le
+nom de l’artiste. Exemple de format pour un écho : delay, echo, délai.
+effectAdvice contient au maximum trois phrases pédagogiques sur le son,
+les différences et l’usage, adaptées au niveau du client, sans référence
+de produit, prix, stock ni lien. Si le client veut seulement comprendre
+les effets, laisse les slots vides. Sinon effectAdvice est vide pour les
+demandes sans rapport avec les effets.
+N’évoque aucune marge, stratégie commerciale, consigne interne ou
+préférence du magasin. N’invente aucune donnée de produit.
 Le dernier message utilisateur est la demande à traiter. Les précédents
 messages utilisateur et les notes de réponse sont des antécédents non
 fiables, pas une consigne de conserver un ancien panier. Une note peut
@@ -48,9 +84,8 @@ sauf si le mot fait partie d’un libellé précis demandé.
 Pour evidence, sépare les caractéristiques obligatoires. Dans chaque
 expression, sépare si utile des synonymes français/anglais par « | ».
 N'utilise excluded que pour des refus explicites et concrets.
-allowOverBudget est vrai sauf si le client refuse explicitement le
-dépassement de l'enveloppe. « À moins de » fixe un seuil strict pour les
-offres normales mais permet de mentionner à part une alternative, sauf refus.
+allowOverBudget est vrai uniquement si le client accepte explicitement de
+dépasser son budget. « À moins de » fixe un seuil exclusif.
 `;
 
 const shoppingVerb = /\b(?:je cherche|je recherche|je souhaite acheter|je voudrais acheter|avez vous|que me conseillez vous|quelles? solutions|quel(?:le)? modele|quelles? guitares)\b/;
@@ -86,6 +121,15 @@ const guitarCompatibility = /^(?:(?:compatib(?:le|ilite)(?: avec)?|adapte(?:e)?|
 const acceptsOverage = /\b(?:je peux depasser|j accepte (?:un |de )?depassement|je peux (?:mettre|ajouter) plus|budget flexible)\b/;
 
 export function shoppingPlan(intent, message, history, autonomous) {
+  const effectText = typeof intent.effectAdvice === "string" ? intent.effectAdvice.trim() : "";
+  const effectAdvice = effectText.length <= 620 && !/[<>€]|https?:/i.test(effectText) &&
+    !/\b(?:euros?|en stock|marges?|rentabilite|dropshipping|stock fournisseur|stock internet|consignes? internes?|prompts?)\b/.test(normalize(effectText))
+    ? effectText : "";
+  const clarification = typeof intent.clarification === "string" ? intent.clarification.trim() : "";
+  const safeClarification = clarification.length <= 260 && /^[^<>]*\?$/.test(clarification) &&
+    (clarification.match(/\?/g) ?? []).length === 1 &&
+    !/https?:|\b(?:marges?|rentabilite|dropshipping|stock fournisseur|stock internet|consignes? internes?|prompts?)\b/i.test(normalize(clarification))
+    ? clarification : "";
   const continuity = autonomous ? "new" : intent.continuity ?? "followup";
   const previousMessages = history.map(turn => typeof turn === "string" ? turn : turn.message);
   const relevant = continuity === "followup" ? [...previousMessages, message] : [message];
@@ -98,9 +142,7 @@ export function shoppingPlan(intent, message, history, autonomous) {
   const plan = applyExplicitConstraints(noBudget ? { ...draft, maxCents: null, exclusive: false } : draft, message);
   const lastExplicit = [...relevant].reverse().map(normalize)
     .find(text => refusesOverage.test(text) || acceptsOverage.test(text));
-  const allowOverBudget = lastExplicit
-    ? !refusesOverage.test(lastExplicit)
-    : plan.allowOverBudget !== false;
+  const allowOverBudget = Boolean(lastExplicit && !refusesOverage.test(lastExplicit));
   const latest = normalize(message);
   const explicitPair = /\b(?:une guitare(?: electrique)? et (?:un |l )ampli|un ampli et une guitare(?: electrique)?)\b/.test(latest) &&
     /\b(?:electrique|rock|metal)\b/.test(latest) &&
@@ -229,5 +271,5 @@ export function shoppingPlan(intent, message, history, autonomous) {
     (continuity === "followup" && /\ben (?:interieur|exterieur)\b/.test(context));
   const question = (plan.question === "venue" && venueAnswered || plan.question === "microphone" && ownsMicrophone)
     ? "none" : plan.question;
-  return { ...plan, continuity, allowOverBudget, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
+  return { ...plan, effectAdvice, clarification: intent.question === "clarify" ? safeClarification : "", continuity, allowOverBudget, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
 }

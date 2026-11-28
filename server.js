@@ -1,3 +1,4 @@
+import { createCommercialPolicyReader } from "./commercial-policy.js";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -30,6 +31,7 @@ const oxatisConfigured = Boolean(process.env.OXATIS_APP_ID && process.env.OXATIS
 const oxatis = createOxatis({ appId: process.env.OXATIS_APP_ID, token: process.env.OXATIS_TOKEN });
 const store = process.env.DATABASE_URL ? createCatalogStore(process.env.DATABASE_URL, oxatis) : null;
 configureCatalogAdmin(app, oxatis, store);
+const readCommercialPolicy = createCommercialPolicyReader(process.env.COMMERCIAL_POLICY_FILE);
 
 let catalog=[], catalogUpdatedAt=null, lastCatalogError=null;
 let oxatisCatalogReadAt = null;
@@ -186,7 +188,8 @@ app.post("/api/chat",async(req,res)=>{
   if(useOxatis || !catalog.length) await refreshCatalog();
   if(!catalog.length)return res.status(503).json({error:"Je ne peux pas vérifier les produits pour le moment. Réessayez dans un instant."});
   const snapshot=catalog;
-  const catalogServices = { readLive: oxatisConfigured ? oxatis.product : undefined, productLink };
+  const catalogServices = { readLive: oxatisConfigured ? oxatis.product : undefined, productLink,
+    commercialPolicy: await readCommercialPolicy() };
   const exact = await adviseExactProduct(snapshot, message, catalogServices);
   if (exact) return res.json(recordConversation(exact,{continuity:"new",maxCents:null},null,message));
   const boundedText = (value, limit) => typeof value === "string" && value.length <= limit ? clean(value) : "";
@@ -214,14 +217,29 @@ app.post("/api/chat",async(req,res)=>{
   if (response.status !== "completed" || !response.output_text) {
    return res.status(502).json({error:"Je n’ai pas pu analyser votre demande. Pouvez-vous la reformuler ?"});
   }
-  const plan = shoppingPlan(JSON.parse(response.output_text), message, history, autonomous);
+  const intent = JSON.parse(response.output_text);
+  if (["unknown", "acoustic", "nylon", "steel", "electric"].includes(intent.stringInstrument)) {
+   const stringAdvice = await handleConversation(message,memory,snapshot,catalogServices,intent.stringInstrument);
+   if (stringAdvice) return res.json(stringAdvice);
+  }
+  const plan = shoppingPlan(intent, message, history, autonomous);
+  if (plan.clarification) {
+   const reply = [plan.effectAdvice, plan.clarification].filter(Boolean).join("\n\n");
+   return res.json(recordConversation({reply,products:[],followUp:plan.clarification},plan,memory,message));
+  }
+  if (plan.effectAdvice && !plan.slots.length && plan.question !== "clarify") {
+   return res.json(recordConversation({reply:plan.effectAdvice,products:[],followUp:null},plan,memory,message));
+  }
   if(plan.continuity==="followup" && plan.question && (memory.facts[plan.question]||memory.asked.includes(plan.question))) {
    plan.question="none";
    plan.suppressQuestion=true;
   }
   if(plan.continuity==="followup" && plan.addition) {
    const added=await addToConversation(plan,message,memory,snapshot,catalogServices);
-   if(added)return res.json(added);
+   if(added) {
+    if (plan.effectAdvice) added.reply = [plan.effectAdvice, added.reply].join("\n\n");
+    return res.json(added);
+   }
   }
   const result = await advise(snapshot, plan, {
    ...catalogServices,
@@ -235,6 +253,7 @@ app.post("/api/chat",async(req,res)=>{
     return advice.status === "completed" && advice.output_text ? JSON.parse(advice.output_text) : null;
    }
   });
+  if (plan.effectAdvice) result.reply = [plan.effectAdvice, result.reply].join("\n\n");
   res.json(recordConversation(result,plan,memory,message));
  }catch {
   console.error("Analyse ou recherche de conseil impossible.");

@@ -1,3 +1,4 @@
+import { compareCommercialRank, defaultCommercialPolicy, sumCommercialRank } from "./commercial-policy.js";
 import { cents, familyMatches, isStock, money, normalize, questions, traits, within } from "./recommendations.js";
 
 const maxLiveChecks = 12;
@@ -29,8 +30,6 @@ const facts = {
 
 const denied = /\b(?:sans (?!fil\b)|absence de|pas de|non compatible|non inclus(?:e|es|s)?|vendu(?:e|es|s)? separement|en option|uniquement sur secteur|sur secteur uniquement|disponible separement)\b/;
 const phrase = (text, term) => Boolean(term) && ` ${text} `.includes(` ${term} `);
-const preferredProdipe = product => isStock(product) && (
-  /^prodipe(?: guitars?)?$/.test(normalize(product.brand)) || /^prodipe\b/.test(normalize(product.title)));
 const keyOf = product => String(product.oxId || product.id);
 const terms = value => normalize(value).split(" ").filter(word => word.length > 2);
 
@@ -56,6 +55,14 @@ function productIdentity(product, slot) {
   const brand = normalize(product.brand);
   if (slot.brands.length && !slot.brands.some(name =>
     brand ? normalize(name) === brand : title.startsWith(normalize(name) + " "))) return false;
+  if (slot.effectKind === "pedal" || slot.effectKind === "multi") {
+    if (/\b(?:pedalboards?|etuis?|housses?|alimentations?|patch cables?|cables? (?:patch|pour)|supports?|switchers?|pedales? d expression|footswitchs?)\b/.test(title)) return false;
+    const multi = /\b(?:multi effets?|multieffets?|multi effects?|multieffects?|processeurs? d effets?)\b/;
+    if (slot.effectKind === "multi") return multi.test(title) || multi.test(category);
+    if (multi.test(title)) return false;
+    return slot.names.some(name => phrase(title, normalize(name))) ||
+      (/\b(?:pedales?|stompbox)\b/.test(title) && slot.names.some(name => phrase(category, normalize(name))));
+  }
   if (slot.bass || slot.vocalMic) {
     const identity = `${title} ${category}`;
     if (/\b(?:housses?|etuis?|supports?|cables?|adaptateurs?|cordes? (?:pour|de)|pieces? detachees?|amplis?|amplificateurs?|enceintes?|preamplis?)\b/.test(title)) return false;
@@ -131,14 +138,14 @@ function assess(product, slot, plan) {
   const stockB = /\b(?:stock b|b stock|occasion|reconditionne)\b/.test(normalize(product.title));
   const score = preferences + (isStock(product) ? 2 : 0) + (dedicatedHeadphones ? 8 : 0) - (stockB ? 5 : 0) +
     (slot.family === "electric" && plan.beginner && /\b(?:floyd rose|vibrato flottant)\b/.test(text) ? -4 : 0);
-  return { product, missing, proved, excluded, compact, score, prodipe: Number(preferredProdipe(product)) };
+  return { product, missing, proved, excluded, compact, score, commercial: (plan.commercialPolicy ?? defaultCommercialPolicy)(product, slot, plan.commercialNow ?? Date.now()) };
 }
 
 const orderable = product => product.availability === "sur commande, délai à confirmer" || product.availability === "backorder";
 const usable = (product, plan) => product.visible === true && product.canOrder !== false &&
   (isStock(product) || (!plan.inStock && orderable(product)));
 const byFit = (a, b) => a.missing - b.missing || Number(a.compactPenalty) - Number(b.compactPenalty) ||
-  b.prodipe - a.prodipe || b.score - a.score || a.price - b.price;
+  compareCommercialRank(a.commercial, b.commercial) || b.score - a.score || a.price - b.price;
 
 function candidatesFor(products, slot, plan) {
   return products.filter(product => slot.candidate ? slot.candidate(product) : productIdentity(product, slot)).map(product => {
@@ -187,21 +194,21 @@ function matchingSets(products, plan) {
     const item = assess(product, slot, plan);
     return item.missing || item.excluded ? [] : [{ ...item, price, url, family: slot.family }];
   }));
-  let sets = [{ items: [], price: 0, score: 0, compact: 0, prodipe: 0 }];
+  let sets = [{ items: [], price: 0, score: 0, compact: 0, commercial: [0, 0, 0, 0] }];
   for (const group of groups) {
     sets = sets.flatMap(set => group
       .filter(item => !set.items.some(previous => keyOf(previous.product) === keyOf(item.product)))
       .map(item => ({ items: [...set.items, item], price: set.price + item.price,
-        score: set.score + item.score, compact: set.compact + Number(item.compact), prodipe: set.prodipe + item.prodipe })));
+        score: set.score + item.score, compact: set.compact + Number(item.compact), commercial: sumCommercialRank(set.commercial, item.commercial) })));
   }
   const affordable = sets.filter(set => within(set.price, plan));
   const byAdvice = (a, b) => (!plan.compact ? a.compact - b.compact : 0) ||
     b.score - a.score || a.price - b.price;
   if (affordable.length) {
-    const sorted = affordable.sort((a, b) => (!plan.compact ? a.compact - b.compact : 0) || b.prodipe - a.prodipe || byAdvice(a, b));
+    const sorted = affordable.sort((a, b) => (!plan.compact ? a.compact - b.compact : 0) || compareCommercialRank(a.commercial, b.commercial) || byAdvice(a, b));
     const best = sorted[0];
     return { overBudget: false, priced: sorted
-      .filter(set => set.prodipe === best.prodipe && (plan.compact || set.compact === best.compact)).slice(0, 5) };
+      .filter(set => compareCommercialRank(set.commercial, best.commercial) === 0 && (plan.compact || set.compact === best.compact)).slice(0, 5) };
   }
   if (!plan.allowOverBudget || plan.maxCents === null || !sets.length) return { overBudget: false, priced: [] };
   const sorted = sets.sort((a, b) => (!plan.compact ? a.compact - b.compact : 0) || a.price - b.price || byAdvice(a, b));
@@ -280,7 +287,8 @@ function followUp(plan) {
   return questions[plan.question];
 }
 
-export async function advise(products, plan, { readLive, productLink, choose } = {}) {
+export async function advise(products, plan, { readLive, productLink, choose, commercialPolicy } = {}) {
+  plan = { ...plan, commercialPolicy, commercialNow: Date.now() };
   if (!plan.slots.length || plan.slots.length > 3 || plan.question === "clarify" ||
       (plan.maxCents !== null && (!Number.isSafeInteger(plan.maxCents) || plan.maxCents <= 0))) {
     return { reply: questions.clarify, products: [], followUp: questions.clarify };
@@ -378,8 +386,10 @@ export async function advise(products, plan, { readLive, productLink, choose } =
     ? "La couverture dépend de la distance, du bruit ambiant et du lieu." : null;
   const ownMic = plan.ownsMicrophone && selected.items.some(item => item.family === "pa")
     ? "Votre micro est déjà prévu. Quel connecteur utilise-t-il ? Je pourrai vous préciser le branchement." : null;
-  return { reply: [opening, lines.join("\n\n"), coverage, ownMic, question].filter(Boolean).join("\n\n"),
+  const response = { reply: [opening, lines.join("\n\n"), coverage, ownMic, question].filter(Boolean).join("\n\n"),
     products: result, followUp: [ownMic, question].filter(Boolean).join(" ") || null };
+  Object.defineProperty(response, "verifiedProducts", { value: selected.items.map(item => item.product) });
+  return response;
 }
 
 export async function adviseExactProduct(products, message, services) {

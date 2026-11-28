@@ -172,6 +172,8 @@ export function normalizeProduct(row) {
     discountRulePresent,
     showStockLevel: bool(row.ShowStockLevel),
     quantity,
+    stockSource: /^stock internet$/i.test(clean(row.QuantityInStock?.Append)) ? "supplier" :
+      /^stock magasin$/i.test(clean(row.QuantityInStock?.Append)) ? "store" : null,
     availability: available
   };
 }

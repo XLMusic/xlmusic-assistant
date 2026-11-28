@@ -138,18 +138,21 @@ function requestedBudget(message,state) {
 
 const availableBudget = (remaining,state) => remaining===null?null:remaining-Number(state.exclusive);
 
-export async function handleConversation(message,state,catalog,services) {
+export async function handleConversation(message,state,catalog,services,stringHint) {
   const text=normalize(message);
-  if (newTopic.test(text)) return null;
+  if (newTopic.test(text)) {
+    if (!stringHint) return null;
+    state = empty();
+  }
   const previous=state.pending;
   answerFacts(message,state);
   if (previous && state.facts[previous]) state.pending=null;
   const requestsStrings=/\bcordes?\b/.test(text.replace(/\b\d+ cordes?\b/g, "")) && /\bguitare\b/.test(text);
   const namedGuitar = requestsStrings || state.topic === "strings"
     ? stringsForCatalogGuitar(text, catalog) : null;
-  const explicitKind = stringKind(text);
+  const explicitKind = stringKind(text) ?? (stringHint === "unknown" ? null : stringHint);
   const kind = namedGuitar && (!explicitKind || explicitKind === "acoustic") ? namedGuitar : explicitKind;
-  if (requestsStrings || (state.topic==="strings" && (kind || previous==="strings" && text.split(" ").length<=6))) {
+  if (requestsStrings || stringHint || (state.topic==="strings" && (kind || previous==="strings" && text.split(" ").length<=6))) {
     const contextMode=state.topic==="strings"?"followup":"new";
     if (contextMode==="new") {state=empty();state.topic="strings";}
     state.budget=requestedBudget(message,state);
@@ -165,11 +168,10 @@ export async function handleConversation(message,state,catalog,services) {
     const fits = product => guitarStrings(product, material);
     const isSavarez = product => normalize(product.brand) === "savarez" ||
       /^savarez\b/.test(normalize(product.title));
-    const maxCents = availableBudget(state.budget, state);
-    const preferred = await advise(catalog, accessoryPlan(product => isSavarez(product) && fits(product), maxCents), services);
-    const savarez = preferred.products.length > 0;
-    const selected = savarez ? preferred : await advise(catalog.filter(product => !isSavarez(product)),
-      accessoryPlan(fits, maxCents), services);
+    const plan = accessoryPlan(fits, availableBudget(state.budget, state));
+    plan.slots[0].preferredBrand = "Savarez";
+    const selected = await advise(catalog, plan, services);
+    const savarez = selected.verifiedProducts?.some(isSavarez);
     state.pending=null;
     state.items=selected.products.map(p=>p.sku);
     if (!selected.products.length) return result("Je n’ai pas trouvé de jeu adapté en stock. Si vous me donnez la marque et le modèle de votre guitare, je pourrai affiner.",state,{contextMode});
