@@ -83,7 +83,8 @@ Commence par comprendre le dernier message et choisis mode :
 - objection : le musicien exprime un doute, un frein, une hésitation,
   une idée reçue ou une crainte, même dans une phrase courte et même
   après une question de découverte. Accueille sa préoccupation,
-  explique les nuances et les possibilités utiles dans advice, puis
+  réponds concrètement à chaque frein exprimé avant de changer de famille de produit.
+  Explique les nuances et les possibilités utiles dans advice, puis
   poursuis naturellement la découverte si cela aide. Une objection
   n’est ni une demande d’achat ni une réponse qui valide une recherche.
   Laisse slots vides, question=none et stringInstrument=none, sauf si
@@ -238,7 +239,7 @@ export function shoppingPlan(intent, message, history, autonomous) {
   const explicitPair = /\b(?:une guitare(?: electrique)? et (?:un |l )ampli|un ampli et une guitare(?: electrique)?)\b/.test(latest) &&
     /\b(?:electrique|rock|metal)\b/.test(latest) &&
     !/\b(?:sans ampli|je possede|j ai deja|casque|cable|housse|pedales?|sangle|accessoires?|guitare acoustique|guitare classique)\b/.test(latest);
-  const onlyGuitars = /\b(?:quelles?|cherche|recherche|avez vous|conseill(?:ez|er))\b.*\bguitares? electriques?\b/.test(latest) &&
+  const onlyGuitars = /\b(?:quelles?|comparez|compare|comparaison|cherche|recherche|avez vous|conseill(?:ez|er))\b.*\bguitares? electriques?\b/.test(latest) &&
     !/\b(?:ampli|casque|cordes|capodastre|housse|pedale|je possede|j ai deja|accessoires?)\b/.test(latest);
   const wantsHeadphones = /\b(?:jouer|jeu) au casque\b/.test(latest) &&
     /\bsans (?:utiliser )?(?:(?:mon|l|un|d) )?ampli(?:ficateur)?\b/.test(latest);
@@ -260,9 +261,9 @@ export function shoppingPlan(intent, message, history, autonomous) {
       ` ${latest} `.includes(` ${normalize(brand)} `)) brands.push(brand);
     const names = (interpreted?.family === "electric" ? interpreted.names : [])
       .filter(name=>latest.includes(normalize(name))&&!brands.some(brand=>normalize(brand)===normalize(name)) &&
-        !/^(?:guitare electrique|electrique|guitares electriques)$/.test(normalize(name)));
+        !/^(?:guitares? electriques?|electrique)(?: en stock| pour debuter| debutant)*$/.test(normalize(name)));
     const evidence = (interpreted?.evidence ?? []).filter(term=>extraTechnical.test(normalize(term)));
-    plan.slots = [{ ...defaults, ...interpreted, family: "electric", names, brands, evidence }];
+    plan.slots = [{ ...defaults, ...interpreted, family: "electric", names, brands, evidence, required: (interpreted?.required ?? []).filter(trait => trait !== "simpleControls") }];
     if (/\ben stock\b/.test(latest)) plan.inStock=true;
     if (plan.question === "clarify") plan.question = "none";
   } else if (wantsHeadphones) {
