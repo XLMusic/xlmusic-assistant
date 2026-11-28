@@ -59,35 +59,41 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
     if (hostname === "api.openai.test") {
       openAIRequests++;
       const body = JSON.parse(options.body);
-      assert.equal(body.text.format.strict, true);
-      const isAdvice = body.text.format.name === "xlmusic_v8_conseil";
+      const isAdvice = body.text?.format.name === "xlmusic_v8_conseil";
       let output = intent;
       if (isAdvice) {
+        assert.equal(body.text.format.strict, true);
         const input = JSON.parse(body.input);
-        if (input.message === request) {
-          assert.deepEqual(input.context, []);
-          assert.equal(input.options[0].total, 19900);
-        } else assert.equal(input.options[0].total, 55900);
+        assert.equal(input.options[0].total, input.message === request ? 19900 : 55900);
         output = { option: 0, benefits: [0] };
-      } else if (adviceReplies.has(body.input.at(-1).content)) {
-        output = { ...intent, mode:"advice", advice:adviceReplies.get(body.input.at(-1).content),
-          stringInstrument:"nylon" };
-      } else if (body.input.at(-1).content === request) {
-        assert.deepEqual(body.input, [{ role: "user", content: request }]);
       } else {
-        const followup = body.input.at(-1).content === outdoors;
-        if (followup) {
-          const anchor = JSON.parse(body.input[0].content);
-          assert.equal(anchor.messageAntérieur, soundRequest);
-          assert.match(anchor.questionPosée, /intérieur/);
-          assert.deepEqual(anchor.fichesProposées, [speaker.title]);
+        assert.equal(body.tools[0].name, "search_catalogue_xlmusic");
+        assert.equal(body.tools[0].strict, true);
+        assert.equal(body.parallel_tool_calls, false);
+        const message = JSON.parse(body.input.at(-1).content).dernierMessage;
+        if (adviceReplies.has(message)) {
+          assert.match(body.input[0].content, /Savarez/);
+          return Response.json({ object:"response", status:"completed", output:[{ type:"message", content:[
+            { type:"output_text", text:adviceReplies.get(message) }
+          ] }] });
         }
-        output = { ...intent, slots: [{ family: "pa", names: [], brands: [], required: ["battery", "bluetooth", "microphone"],
-          evidence: [], excluded: [], preferred: [] }], maxCents: null, inStock: false,
-          continuity: followup ? "followup" : "new", question: "venue" };
+        if (message === outdoors || message === soundRequest) {
+          if (message === outdoors) {
+            const anchor = JSON.parse(body.input[0].content);
+            assert.equal(anchor.message, soundRequest);
+            assert.match(anchor.question, /intérieur/);
+            assert.deepEqual(anchor.products, [speaker.title]);
+          }
+          output = { ...intent, slots:[{family:"pa", names:[], brands:[], required:["battery","bluetooth","microphone"],
+            evidence:[], excluded:[], preferred:[]}], maxCents:null, inStock:false,
+            continuity:message === outdoors ? "followup" : "new", question:"venue" };
+        }
+        return Response.json({ object:"response", status:"completed", output:[
+          { type:"function_call", name:"search_catalogue_xlmusic", call_id:"call_test", arguments:JSON.stringify(output) }
+        ] });
       }
-      return Response.json({ object: "response", status: "completed", output: [{ type: "message", content: [
-        { type: "output_text", text: JSON.stringify(output) }
+      return Response.json({ object:"response", status:"completed", output:[{ type:"message", content:[
+        { type:"output_text", text:JSON.stringify(output) }
       ] }] });
     }
     if (hostname === "webservices.oxatis.com") {
@@ -132,6 +138,7 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
     });
   }
   assert.equal((await http("/health")).status, 503);
+  assert.equal((await http("/api/admin/oxatis/import/start", {})).status, 404);
   assert.equal((await http("/api/chat", { message: request })).status, 503);
   ready = true;
   const health = await http("/health");
@@ -139,7 +146,7 @@ test("la route HTTP relit le catalogue PostgreSQL et partage le diagnostic", asy
   assert.equal(health.status, 200);
   assert.equal(JSON.parse(health.text).catalogCount, JSON.parse(status.text).count);
   assert.equal(JSON.parse(health.text).catalogSource, "oxatis");
-  assert.equal(JSON.parse(health.text).version, "V8");
+  assert.equal(JSON.parse(health.text).version, "V9");
   const page = await http("/");
   assert.doesNotThrow(() => new Script(page.text.match(/<script>([\s\S]+)<\/script>/)[1]));
   const chat = await http("/api/chat", { message: request, history: ["Je débute, proposez-moi le meilleur ensemble guitare et ampli pour 400 €." ] });
