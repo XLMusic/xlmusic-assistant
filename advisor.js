@@ -33,9 +33,15 @@ const phrase = (text, term) => Boolean(term) && ` ${text} `.includes(` ${term} `
 const keyOf = product => String(product.oxId || product.id);
 const terms = value => normalize(value).split(" ").filter(word => word.length > 2);
 
+const documentedDescriptions = new Map([
+  ["PRO-TT1", "Micro filaire XLR 3 broches"],
+  // Zoom G1 FOUR / G1X FOUR effect list: GoldDrive, SweetDrv and AnalogDly.
+  ["ZOOM-G1-FOUR", "Modélisations d’overdrive et de delay"],
+  ["ZOOM-G1X-FOUR", "Modélisations d’overdrive et de delay"]
+]);
+
 function descriptions(product) {
-  // The TT1 Lanen manual confirms the connection for this exact XLMusic SKU.
-  const documented = product.id === "PRO-TT1" ? "Micro filaire XLR 3 broches" : "";
+  const documented = documentedDescriptions.get(product.id);
   return [product.title, documented, ...(product.description ?? "").split(/[;!?\n]|\.\s+|\bmais\b/i)]
     .map(normalize).filter(Boolean);
 }
@@ -189,6 +195,7 @@ function shortlist(products, plan) {
 function matchingSets(products, plan) {
   const groups = plan.slots.map(slot => products.flatMap(({ product, url }) => {
     if (!usable(product, plan) || !productIdentity(product, slot)) return [];
+    if (plan.verifyEffectLinks && ["pedal", "multi"].includes(slot.effectKind) && !url) return [];
     const price = cents(product.price);
     if (price === null) return [];
     const item = assess(product, slot, plan);
@@ -288,7 +295,7 @@ function followUp(plan) {
 }
 
 export async function advise(products, plan, { readLive, productLink, choose, commercialPolicy } = {}) {
-  plan = { ...plan, commercialPolicy, commercialNow: Date.now() };
+  plan = { ...plan, commercialPolicy, commercialNow: Date.now(), verifyEffectLinks: Boolean(productLink) };
   if (!plan.slots.length || plan.slots.length > 3 || plan.question === "clarify" ||
       (plan.maxCents !== null && (!Number.isSafeInteger(plan.maxCents) || plan.maxCents <= 0))) {
     return { reply: questions.clarify, products: [], followUp: questions.clarify };

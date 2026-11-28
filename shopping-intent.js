@@ -231,6 +231,20 @@ export function shoppingPlan(intent, message, history, autonomous) {
     plan.slots = [{ ...defaults, ...existing, family:"other", names, evidence, required, bass: genericBass, vocalMic: genericVocalMic, wiredMic: genericVocalMic && /\bfilaires?\b/.test(latest) }];
     if (plan.question === "clarify") plan.question = "none";
   }
+  const requestsMultiEffect = /\b(?:cherche|recherche|voudrais|souhaite|conseillez|acheter) (?:moi )?(?:un |des )?(?:multi effets?|multieffets?|multi effects?)\b/.test(latest) &&
+    !/\b(?:sans multi effets?|plutot qu un multi effets?)\b/.test(latest);
+  if (requestsMultiEffect && plan.slots.length <= 1) {
+    const existing = plan.slots[0] ?? defaults;
+    const namedEffects = ["overdrive", "delay"].filter(effect => latest.split(" ").includes(effect));
+    const evidence = existing.evidence.filter(term => {
+      const text = normalize(term);
+      return !/^(?:en stock|multi effets?|multieffets?|pour guitare|guitare)$/.test(text) &&
+        !namedEffects.some(effect => text.split(" ").includes(effect));
+    });
+    plan.slots = [{ ...defaults, ...existing, family: "other", effectKind: "multi",
+      evidence: [...evidence, ...namedEffects] }];
+    if (plan.question === "clarify" && !safeClarification) plan.question = "none";
+  }
   const audience = /\b(?:cinquantaine|50) (?:de )?(?:personnes|spectateurs)\b/.test(context);
   const asksMicrophone = /\b(?:microphones?|micros?)\b/.test(context);
   plan.slots = plan.slots.map(slot => {
