@@ -94,3 +94,56 @@ test("les deux fiches Oxatis peuvent écrire le jack sans unité et les câbles 
   assert.deepEqual(pa.products.map(p=>p.sku),[aeris.id,"UHF","JACK"]);
   assert.match(pa.reply,/437,00/);
 });
+
+test("les cordes gardent le budget initial et utilisent la référence du modèle identifié", async () => {
+  const guitar = product("18", "C40II", "Yamaha C40 II", 149, "", "Guitares classiques");
+  const source = [...catalog, guitar];
+  const first = await handleConversation("Quelles cordes pour ma guitare, budget 10 € ?", state([], null, null), source, access);
+  assert.equal(first.conversation.budget, 1000);
+  const acoustic = await handleConversation("Une guitare sèche", first.conversation, source, access);
+  assert.equal(acoustic.conversation.budget, 1000);
+  const model = await handleConversation("Yamaha C40 II", acoustic.conversation, source, access);
+  assert.equal(model.conversation.facts.strings, "nylon");
+  assert.deepEqual(model.products, []);
+  const updated = await handleConversation("Pour ma guitare classique, des cordes jusqu’à 12 €", model.conversation, source, access);
+  assert.equal(updated.products[0].sku, "NY");
+});
+
+test("une demande de guitare 7 cordes passe au moteur de recherche d’instruments", async () => {
+  const result = await handleConversation("Je cherche une guitare électrique 7 cordes", state([], null, null), catalog, access);
+  assert.equal(result, null);
+});
+
+test("la Mobile Pro 12 couvre un deuxième micro avec les deux micros UHF fournis", async () => {
+  const speaker = product("19", "MACMOBILEPRO12", "Mac Mah Mobile Pro 12", 269, "Deux entrées micros.");
+  const source = [...catalog, speaker];
+  const services = {...access, readLive: async id => source.find(item => item.oxId === id)};
+  const result = await handleConversation("En intérieur, dans une petite salle, et je voudrais ajouter un deuxième micro sans fil.",
+    state([speaker.id], 60000, "venue"), source, services);
+  assert.deepEqual(result.products.map(item => item.sku), [speaker.id]);
+  assert.match(result.reply, /deux micros main sans fil UHF/);
+  assert.match(result.reply, /269,00/);
+});
+
+test("Savarez est prioritaire parmi les jeux compatibles, en stock et dans le budget", async () => {
+  const savarez = {...product("20", "SAV", "Savarez, Jeu de cordes guitare classique", 13, "Cordes nylon."), brand:"Savarez"};
+  const source = [nylon, steel, savarez];
+  const services = {...access, readLive: async id => source.find(item => item.oxId === id)};
+  const options = [
+    ["classique, budget 15 €", "SAV", true],
+    ["classique, budget 12 €", "NY", false],
+    ["folk, budget 15 €", "ST", false]
+  ];
+  for (const [criteria, sku, madeInFrance] of options) {
+    const response = await handleConversation(`Je cherche des cordes pour ma guitare ${criteria}`,
+      state([], null, null), source, services);
+    assert.equal(response.products[0].sku, sku);
+    assert.equal(response.reply.includes("fabriquées en France"), madeInFrance);
+  }
+  const unavailable = {...services, readLive: async id => id === savarez.oxId
+    ? {...savarez, availability: "out of stock", canOrder:false}
+    : services.readLive(id)};
+  const fallback = await handleConversation("Je cherche des cordes pour ma guitare classique",
+    state([], null, null), source, unavailable);
+  assert.equal(fallback.products[0].sku, "NY");
+});
