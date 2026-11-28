@@ -268,8 +268,9 @@ export function shoppingPlan(intent, message, history, autonomous) {
     const names = (interpreted?.family === "electric" ? interpreted.names : [])
       .filter(name=>latest.includes(normalize(name))&&!brands.some(brand=>normalize(brand)===normalize(name)) &&
         !/^(?:guitares? electriques?|electrique)(?: en stock| pour debuter| debutant)*$/.test(normalize(name)));
-    const evidence = (interpreted?.evidence ?? []).filter(term=>extraTechnical.test(normalize(term)));
-    plan.slots = [{ ...defaults, ...interpreted, family: "electric", names, brands, evidence, required: (interpreted?.required ?? []).filter(trait => trait !== "simpleControls") }];
+    const evidence = (interpreted?.evidence ?? []).filter(term => extraTechnical.test(normalize(term)) &&
+      normalize(term).split(" ").some(word => word.length > 2 && latest.split(" ").includes(word)));
+    plan.slots = [{ ...defaults, ...interpreted, family: "electric", names, brands, evidence, required: (interpreted?.required ?? []).filter(trait => ({pickup:/micro|humbucker/, portable:/leger|portable/, headphone:/casque/, bluetooth:/bluetooth/, battery:/batterie/})[trait]?.test(latest)) }];
     if (/\ben stock\b/.test(latest)) plan.inStock=true;
     if (plan.question === "clarify") plan.question = "none";
   } else if (wantsHeadphones) {

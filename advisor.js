@@ -417,11 +417,13 @@ export async function advise(products, plan, { readLive, productLink, choose, co
       const choice = priced[index];
       const extra = plan.maxCents !== null && choice.price > plan.maxCents ? choice.price - plan.maxCents : 0;
       const reference = priced.findLast(set => set.price <= plan.maxCents);
+      const feature = descriptions(choice.items[0].product).slice(1).find(line =>
+        /\b(?:micros?|humbuckers?|manche|touche|chevalet|diapason|frettes)\b/.test(line) && line.length <= 105);
       const benefit = extra
         ? upgradeTraits(choice.items[0], reference.items[0], plan).map(trait => explanations[trait]).join(" ")
-        : benefitsFor(choice.items[0], plan)[0];
+        : benefitsFor(choice.items[0], plan).find(text => text !== genericBenefit[choice.items[0].family]);
       const overage = extra ? `Option facultative · ${money(extra)} au-dessus de votre budget.` : null;
-      return [`• ${product.title} — ${product.price} TTC, ${product.availability}.`, overage, benefit, product.url].filter(Boolean).join("\n");
+      return [`• ${product.title} — ${product.price} TTC, ${product.availability}.`, overage, benefit, !benefit && feature ? `Caractéristique indiquée sur la fiche : ${feature}.` : null, product.url].filter(Boolean).join("\n");
     });
     return { reply: ["Voici les options que notre magasin peut vous proposer.", ...lines, question]
       .filter(Boolean).join("\n\n"), products, followUp: question ?? null, alternatives: true };
