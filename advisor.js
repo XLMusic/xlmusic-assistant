@@ -200,7 +200,7 @@ function matchingSets(products, plan) {
     const price = cents(product.price);
     if (price === null) return [];
     const item = assess(product, slot, plan);
-    return item.missing || item.excluded ? [] : [{ ...item, price, url, family: slot.family }];
+    return item.missing || item.excluded ? [] : [{ ...item, price, url, family: slot.family, effectKind: slot.effectKind }];
   }));
   let sets = [{ items: [], price: 0, score: 0, compact: 0, commercial: [0, 0, 0, 0] }];
   for (const group of groups) {
@@ -375,7 +375,9 @@ export async function advise(products, plan, { readLive, productLink, choose, co
     const choice = selected.items[index];
     const functions = choice.family === "pa" && ["battery", "bluetooth", "microphone"].every(fact => choice.proved.has(fact))
       ? "Fonctionne sur batterie, avec Bluetooth et une entrée micro." : null;
-    return [`• ${item.title} — ${item.price} TTC, ${item.availability}.`, reference, functions, benefit, item.url]
+    const documentedEffects = choice.effectKind === "multi" && documentedDescriptions.get(choice.product.id);
+    return [`• ${item.title} — ${item.price} TTC, ${item.availability}.`, reference, functions,
+      documentedEffects ? `${documentedEffects}.` : null, benefit, item.url]
       .filter(Boolean).join("\n");
   });
   if (selected.items.some(({ product }) => product.discountRulePresent)) {

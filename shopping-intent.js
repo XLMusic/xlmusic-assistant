@@ -249,6 +249,21 @@ export function shoppingPlan(intent, message, history, autonomous) {
       evidence: [...evidence, ...namedEffects] }];
     if (plan.question === "clarify" && !safeClarification) plan.question = "none";
   }
+  const pedalEffect = latest.match(/\bpedale (?:de |d )?(delay|echo|overdrive|reverb|chorus|fuzz|distorsion)\b/)?.[1];
+  if (pedalEffect && !requestsMultiEffect && plan.slots.length <= 1 && !/\b(?:plusieurs|deux) pedales\b/.test(latest)) {
+    const existing = plan.slots[0] ?? defaults;
+    const names = { delay: ["delay", "echo"], echo: ["echo", "delay"], distorsion: ["distorsion", "distortion"] };
+    const evidence = existing.evidence.filter(term => {
+      const text = normalize(term);
+      return latest.includes(text) &&
+        (text.split(" ").length >= 2 || /^(?:stereo|mono|analogique|numerique|midi|usb|xlr)$/.test(text)) &&
+        !/\b(?:pedale|en stock|pour guitare)\b/.test(text);
+    });
+    plan.slots = [{ ...defaults, ...existing, family: "other", effectKind: "pedal",
+      names: names[pedalEffect] ?? [pedalEffect], evidence,
+      required: existing.required.filter(trait => latest.split(" ").includes(trait)) }];
+    if (plan.question === "clarify" && !safeClarification) plan.question = "none";
+  }
   const namesTwoPedals = latest.match(/\bdeux pedales(?: distinctes| separees)?\b.*?\b(?:un |une )?(overdrive|delay|echo|reverb|chorus|fuzz|distorsion) et (?:un |une )?(overdrive|delay|echo|reverb|chorus|fuzz|distorsion)\b/);
   if (namesTwoPedals && namesTwoPedals[1] !== namesTwoPedals[2] && plan.slots.length <= 2) {
     const synonyms = { delay: ["delay", "echo"], echo: ["echo", "delay"], distorsion: ["distorsion", "distortion"] };
