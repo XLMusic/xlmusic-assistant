@@ -8,6 +8,9 @@ const accessoryCategories = /\b(?:accessoires?|pieces? detachees?)\b/;
 const accessoryTitle = /^(?:[a-z0-9]+ ){0,2}(?:pickguards?|plaques? (?:de protection|de guitare)|cordes|jeux? de cordes|capos?|capodastres?|potentiometres?|chevalets?|micros? pour guitare|mediators?|sangles?|etuis?|housses?|supports?|pieds?|alimentations?|batterie de rechange)\b/;
 const accessoryUse = /\b(?:pickguard|cordes|capodastre|plaque|coque|housse|etui|support|pied|alimentation) (?:pour|de remplacement)\b/;
 const electricAccessory = /\b(?:light cases?|stag(?:e)? cases?|guitar strings?|strings? for (?:electric )?guitars?|string sets?|pickguards?|pickup covers?|guitar (?:case|bag|strap|stand)|tuning machines?|housses?|etuis?|cordes? pour guitare)\b/;
+const instrumentNames = /\b(?:guitares?|guitars?|basses?|bass guitar|pianos?|claviers?|keyboards?|synthetiseurs?|batteries?|drum kits?|violons?|violoncelles?|ukuleles?|mandolines?|banjos?|saxophones?|trompettes?|clarinettes?|flutes?|accordeons?|harmonicas?)\b/;
+const instrumentAccessories = /\b(?:housses?|etuis?|gig bags?|hard cases?|soft cases?|guitar cases?|cordes?|strings?|capodastres?|capos?|mediators?|picks?|sangles?|straps?|stands?|supports?|pedales?|pedals?|pickguards?|pieces? detachees?|micros?|pickups?|protections?|alimentations?|adaptateurs?|batteries? de rechange|cables?|sieges?|tabourets?|pupitres?|amplis?|amplificateurs?)\b/;
+const instrumentAccessoryPrefix = /^(?:[a-z0-9]+ ){0,4}(?:housses?|etuis?|gig bags?|hard cases?|soft cases?|jeux? de cordes|cordes?|capodastres?|mediators?|sangles?|supports?|amplis?|amplificateurs?|pedales?|protections?|cables?)\b/;
 const explicitElectric = /\bguitares? electriques?\b/;
 const classicAcousticOrBass = /\b(?:guitares? classiques?|guitares? acoustiques?|basses? electriques?)\b/;
 const compactGuitar = /\b(?:mikro|mini strat(?:ocaster)?|(?:st )?junior|short scale|petit diapason|taille reduite|format reduit|guitare de voyage|guitare pour enfant|3 4|7 8)\b/;
@@ -80,7 +83,23 @@ function productIdentity(product, slot) {
         !/\b(?:chants?|voix|vocals?|vocale?s?|chanteurs?)\b/.test(`${identity} ${normalize(product.description)}`))) return false;
     return !slot.names.length || familyMatches({ ...product, productType: category }, slot);
   }
-  if (slot.family === "other") return familyMatches({ ...product, productType: category }, slot);
+  if (slot.family === "other") {
+    const asksInstrument = slot.itemRole === "instrument" ||
+      (slot.itemRole !== "accessory" && slot.names.some(name =>
+        instrumentNames.test(normalize(name)) && !instrumentAccessories.test(normalize(name))));
+    if (asksInstrument) {
+      const mainTitle = title.split(/\b(?:avec|with|livre avec|livree avec)\b/)[0];
+      const identityTitle = instrumentNames.test(mainTitle) ? mainTitle.replace(/\b\d+ (?:cordes?|strings?)\b/g, "") : mainTitle;
+      const specificCategory = categories.filter(value => !accessoryCategories.test(value));
+      if (instrumentAccessoryPrefix.test(identityTitle) || accessoryUse.test(mainTitle) ||
+          (!instrumentNames.test(mainTitle) && instrumentAccessories.test(identityTitle)) ||
+          electricAccessory.test(mainTitle) ||
+          (/\b(?:pour|for|fits)\b/.test(mainTitle) && instrumentAccessories.test(mainTitle))) return false;
+      if (!instrumentNames.test(mainTitle) && !specificCategory.some(value => instrumentNames.test(value))) return false;
+      return familyMatches({ ...product, productType: specificCategory.join(" ") }, slot);
+    }
+    return familyMatches({ ...product, productType: category }, slot);
+  }
   const accessoryPrefix = title.match(accessoryTitle)?.[0];
   const guitarPosition = title.search(explicitElectric);
   if (accessoryUse.test(title) || (accessoryPrefix &&

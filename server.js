@@ -210,7 +210,7 @@ app.post("/api/chat",async(req,res)=>{
   const intent = JSON.parse(response.output_text);
   const generalAdvice = typeof intent.advice === "string"
    ? intent.advice.replace(/<[^>]*>/g,"").trim().slice(0, 4200) : "";
-  if (intent.mode === "advice") {
+  if (["advice", "objection"].includes(intent.mode)) {
    const memory = restoreConversation(req.body?.conversation,history,[]);
    const reply = generalAdvice || clean(intent.effectAdvice).slice(0, 620);
    return reply

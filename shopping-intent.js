@@ -2,11 +2,13 @@ import { applyExplicitConstraints, intentFormat, intentInstructions, normalize }
 
 const baseSlot = intentFormat.schema.properties.slots.items;
 const effectKind = { type: "string", enum: ["none", "pedal", "multi"] };
-const slot = { ...baseSlot, properties: { ...baseSlot.properties, effectKind }, required: [...baseSlot.required, "effectKind"] };
+const itemRole = { type: "string", enum: ["instrument", "accessory", "equipment"] };
+const slot = { ...baseSlot, properties: { ...baseSlot.properties, effectKind, itemRole },
+  required: [...baseSlot.required, "effectKind", "itemRole"] };
 const properties = {
   ...intentFormat.schema.properties,
   slots: { type: "array", items: slot },
-  mode: { type: "string", enum: ["advice", "clarify", "catalog", "continuation"] },
+  mode: { type: "string", enum: ["advice", "objection", "clarify", "catalog", "continuation"] },
   advice: { type: "string" },
   clarification: { type: "string" },
   effectAdvice: { type: "string" },
@@ -55,6 +57,15 @@ Commence par comprendre le dernier message et choisis mode :
   Laisse slots vides, question=none et stringInstrument=none, même si un
   produit venait d’être proposé et que son nom revient dans la question.
   Tu peux poser une question technique si une précision est nécessaire.
+- objection : le musicien exprime un doute, un frein, une hésitation,
+  une idée reçue ou une crainte, même dans une phrase courte et même
+  après une question de découverte. Accueille sa préoccupation,
+  explique les nuances et les possibilités utiles dans advice, puis
+  poursuis naturellement la découverte si cela aide. Une objection
+  n’est ni une demande d’achat ni une réponse qui valide une recherche.
+  Laisse slots vides, question=none et stringInstrument=none, sauf si
+  le dernier message demande aussi clairement des produits, auquel cas
+  utilise catalog et réponds d’abord à l’objection dans advice.
 - clarify : la demande d’équipement est réelle mais une précision est
   indispensable avant de sélectionner un produit. Pose une seule question
   dans clarification, sans offre. Si c’est une demande de cordes
@@ -62,11 +73,17 @@ Commence par comprendre le dernier message et choisis mode :
   classique/folk/électrique et mémoriser le budget.
 - catalog : il demande une référence à acheter, une recommandation de
   produit, une alternative, un prix, un stock ou un complément de panier.
-  Remplis les champs de recherche. Tu peux expliquer le principe dans
+  Remplis les champs de recherche. Pour chaque slot, itemRole identifie
+  un instrument, un accessoire ou un autre équipement. Un accessoire
+  n’est jamais une alternative à l’instrument demandé, même s’il est
+  moins cher ou compatible. N’ajoute un accessoire que si le client le
+  demande ou demande expressément un ensemble qui doit en inclure.
+  Si une famille d’instruments est encore à déterminer, clarifie le
+  besoin. Tu peux expliquer le principe dans
   advice, mais laisse les produits, prix, stocks et liens à la vérification.
 - continuation : le dernier message répond à une question que l’assistant
   a posée pour préciser une recherche en cours. Il apporte une réponse utile à cette recherche,
-  pas une nouvelle question de méthode ou d’explication. Laisse advice
+  pas une nouvelle question de méthode ou d’explication ni une objection. Laisse advice
   vide sauf si un bref conseil est utile avant de poursuivre.
 En cas de demande mixte, réponds d’abord à la partie technique dans
 advice, puis recherche les produits demandés. N’invente pas de prix,

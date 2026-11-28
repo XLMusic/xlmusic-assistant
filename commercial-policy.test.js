@@ -98,3 +98,18 @@ test("la demande d’un multi-effets conserve les deux effets sans racheter l’
   assert.equal((await advise([zoom], plan, services)).products[0].sku, zoom.id);
   assert.deepEqual((await advise([zoom], plan, { ...services, productLink: async()=>null })).products, []);
 });
+
+test("une recherche d’instrument exclut les accessoires même rangés dans la même catégorie", async () => {
+  const category = "Guitares acoustiques";
+  const cover = product("COVER", "Prodipe", 59, { title:"Prodipe Housse guitare acoustique", productType:category });
+  const caseBag = product("CASE", "Prodipe", 69, { title:"Prodipe Gig bag", productType:category });
+  const instrument = product("GUITAR", "Autre", 109, { title:"Guitare acoustique 6 cordes avec housse", productType:category });
+  const catalog = [cover, caseBag, instrument];
+  const services = {readLive:async id => catalog.find(item => item.id === id)};
+  const guitarSlot = { ...slot, itemRole:"instrument", names:["guitare acoustique"] };
+  const plan = {slots:[guitarSlot], maxCents:12000, inStock:true, allowOverBudget:false};
+  assert.equal((await advise(catalog, plan, services)).products[0].sku, instrument.id);
+  assert.deepEqual((await advise(catalog, {...plan,maxCents:6000}, services)).products, []);
+  const coverPlan = {...plan, slots:[{ ...slot, itemRole:"accessory", names:["housse"] }]};
+  assert.equal((await advise(catalog, coverPlan, services)).products[0].sku, cover.id);
+});
