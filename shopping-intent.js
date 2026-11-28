@@ -273,9 +273,12 @@ export function shoppingPlan(intent, message, history, autonomous) {
     const names = (interpreted?.family === "electric" ? interpreted.names : [])
       .filter(name=>latest.includes(normalize(name))&&!brands.some(brand=>normalize(brand)===normalize(name)) &&
         !/^(?:guitares? electriques?|electrique)(?: en stock| pour debuter| debutant)*$/.test(normalize(name)));
+    const requirements = revisedGuitarComparison ? normalize(relevant.join(" ")) : latest;
     const evidence = (interpreted?.evidence ?? []).filter(term => extraTechnical.test(normalize(term)) &&
-      normalize(term).split(" ").some(word => word.length > 2 && latest.split(" ").includes(word)));
-    plan.slots = [{ ...defaults, ...interpreted, family: "electric", names, brands, evidence, required: (interpreted?.required ?? []).filter(trait => ({pickup:/micro|humbucker/, portable:/leger|portable/, headphone:/casque/, bluetooth:/bluetooth/, battery:/batterie/})[trait]?.test(latest)) }];
+      normalize(term).split(" ").some(word => word.length > 2 && requirements.split(" ").includes(word)));
+    plan.slots = [{ ...defaults, ...interpreted, family: "electric", names, brands, evidence, required: (interpreted?.required ?? []).filter(trait => ({pickup:/micro|humbucker/, portable:/leger|portable/, headphone:/casque/, bluetooth:/bluetooth/, battery:/batterie/})[trait]?.test(requirements)) }];
+    if (revisedGuitarComparison && /\b(?:micro double|humbucker)\b/.test(requirements) &&
+        !plan.slots[0].required.includes("pickup")) plan.slots[0].required.push("pickup");
     if (/\ben stock\b/.test(latest)) plan.inStock=true;
     if (plan.question === "clarify") plan.question = "none";
   } else if (wantsHeadphones) {
@@ -433,15 +436,20 @@ export function shoppingPlan(intent, message, history, autonomous) {
   if (asksForWiredHeadphones && plan.slots.length === 1 && !revisedGuitarComparison && !onlyGuitars &&
       !plan.slots.some(slot => slot.family === "electric" || slot.effectKind === "pedal" || slot.effectKind === "multi")) {
     const slot = plan.slots[0];
-    plan.compareProducts = true;
-    plan.slots = [{ ...slot, family:"other", wiredHeadphone:true, names:[], brands:slot.brands.filter(brand =>
+    const names = slot.names.filter(name => /\b[a-z]+[ -]?\d+[a-z]*\b/i.test(name) && latest.includes(normalize(name)) &&
+      !/\bkatana\b/.test(normalize(name)));
+    plan.compareProducts = !names.length;
+    plan.slots = [{ ...slot, family:"other", wiredHeadphone:true, names, brands:slot.brands.filter(brand =>
       latest.includes(normalize(brand)) && !/boss/.test(normalize(brand))), required:[],
       evidence:slot.evidence.filter(term => /\b(?:3 5 mm|6 35 mm|jack)\b/.test(normalize(term)) && latest.includes(normalize(term))) }];
   }
   const handMic = /\b(?:micro(?:phone)?s?(?: sans fil)? (?:a (?:la )?)?main|emetteurs? (?:a (?:la )?)?main)\b/.test(context);
   if (handMic) {
     plan.slots = plan.slots.map(slot => ({ ...slot, handMic: true,
-      evidence: /\bxlr\b/.test(context) && !slot.evidence.includes("xlr") ? [...slot.evidence, "xlr"] : slot.evidence }));
+      required:slot.required.filter(trait => trait !== "microphone" && trait !== "portable"),
+      names:slot.names.filter(name => /\d/.test(name) && latest.includes(normalize(name))),
+      evidence: [/\bxlr\b/.test(context) && "xlr", ...slot.evidence.filter(term =>
+        /\b(?:usb|cardioide|dynamique|supercardioide)\b/.test(normalize(term)) && latest.includes(normalize(term)))].filter(Boolean) }));
   }
   const compareEffects = /\b(?:compar\w*|ou|versus|plutot)\b/.test(latest) &&
     plan.slots.length === 2 && plan.slots.some(slot => slot.effectKind === "pedal") &&

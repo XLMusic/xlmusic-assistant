@@ -71,7 +71,9 @@ function productIdentity(product, slot) {
   const brand = normalize(product.brand);
   if (slot.brands.length && !slot.brands.some(name =>
     brand ? normalize(name) === brand : title.startsWith(normalize(name) + " "))) return false;
-  if (slot.wiredHeadphone) return /\b(?:jack|3 5 mm|6 35 mm)\b/.test(normalize(product.description));
+  if (slot.wiredHeadphone) return /\b(?:jack|3 5 mm|6 35 mm)\b/.test(normalize(product.description)) &&
+    (!slot.names.length || familyMatches({ ...product, productType: category }, slot));
+  if (slot.handMic) return !slot.names.length || familyMatches({ ...product, productType: category }, { ...slot, family:"other" });
   if (slot.effectKind === "pedal" || slot.effectKind === "multi") {
     if (/\b(?:pedalboards?|etuis?|housses?|alimentations?|patch cables?|cables? (?:patch|pour)|supports?|switchers?|pedales? d expression|footswitchs?)\b/.test(title)) return false;
     const multi = /\b(?:multi effets?|multieffets?|multi effects?|multieffects?|processeurs? d effets?)\b/;
