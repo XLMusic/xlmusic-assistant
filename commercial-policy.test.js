@@ -113,3 +113,24 @@ test("une recherche d’instrument exclut les accessoires même rangés dans la 
   const coverPlan = {...plan, slots:[{ ...slot, itemRole:"accessory", names:["housse"] }]};
   assert.equal((await advise(catalog, coverPlan, services)).products[0].sku, cover.id);
 });
+
+test("le budget de référence organise trois prix et le plafond ferme écarte la montée en gamme", async () => {
+  const { shoppingPlan } = await import("./shopping-intent.js");
+  const candidates = [
+    product("ECO", "Autre", 399, {title:"Guitare électrique Éco"}),
+    product("MID", "Prodipe", 500, {title:"Guitare électrique Standard"}),
+    product("UP", "Autre", 650, {title:"Guitare électrique Plus", description:"Micro double humbucker."}),
+    product("UP-NO", "Ibanez", 649, {title:"Guitare électrique Sans avantage"})
+  ];
+  const services = {readLive:async id=>candidates.find(item=>item.id===id), productLink:async item=>`https://www.xlmusic.fr/${item.id}`};
+  const intent = {slots:[{...slot, names:[], family:"electric"}], maxCents:70000,
+    inStock:true, question:"none", compareProducts:true, continuity:"new"};
+  const flexible = shoppingPlan(intent, "Je cherche une guitare électrique, budget 500 €.", [], true);
+  const options = await advise(candidates, flexible, services);
+  assert.deepEqual(options.products.map(item=>item.sku), ["ECO","MID","UP"]);
+  assert.match(options.reply,/150,00\s*€ au-dessus/);
+  assert.match(options.reply,/micro double/i);
+  const firm = shoppingPlan(intent, "Je cherche une guitare électrique, 500 € maximum.", [], true);
+  assert.equal(firm.maxCents, 50000);
+  assert.deepEqual((await advise(candidates, firm, services)).products.map(item=>item.sku), ["ECO","MID"]);
+});

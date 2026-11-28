@@ -47,8 +47,10 @@ cas, renseigne un seul slot pour le besoin commun. Utilise l'historique
 pour retrouver le besoin, le budget et les références déjà discutées.
 Une référence exacte, un panier ou une demande ciblant un seul modèle
 garde son parcours normal. Une promotion ne justifie jamais à elle seule
-une recommandation. Dans le budget, laisse de la place à plusieurs niveaux
-de prix lorsque leurs différences sont utiles.
+une recommandation. Prends le budget annoncé comme point de référence. Pour un achat ouvert,
+active compareProducts si plusieurs niveaux sont utiles. Préserve
+impérativement les plafonds explicites et n'infère pas un plafond
+pour un simple « j'ai un budget de ».
 Tu échanges naturellement avec les musiciens pour XLMusic. Ton objectif
 premier est de mettre le client en confiance en lui donnant un conseil
 utile et honnête. Cette priorité gouverne toutes les décisions suivantes.
@@ -236,6 +238,10 @@ export function shoppingPlan(intent, message, history, autonomous) {
     .find(text => refusesOverage.test(text) || acceptsOverage.test(text));
   const allowOverBudget = Boolean(lastExplicit && !refusesOverage.test(lastExplicit));
   const latest = normalize(message);
+  const budgetStatement = [...relevant].reverse().find(text => /\d\s*(?:€|euros?\b|eur\b)/i.test(text));
+  const explicitMaximum = /\b(?:maximum|maxi|max|plafond|au plus|jusqu a|budget serre|limite absolue)\b/.test(normalize(budgetStatement));
+  const firmBudget = plan.exclusive || explicitMaximum || Boolean(lastExplicit && refusesOverage.test(lastExplicit));
+  const flexibleComparison = plan.compareProducts === true && !plan.addition && !firmBudget;
   const explicitPair = /\b(?:une guitare(?: electrique)? et (?:un |l )ampli|un ampli et une guitare(?: electrique)?)\b/.test(latest) &&
     /\b(?:electrique|rock|metal)\b/.test(latest) &&
     !/\b(?:sans ampli|je possede|j ai deja|casque|cable|housse|pedales?|sangle|accessoires?|guitare acoustique|guitare classique)\b/.test(latest);
@@ -415,5 +421,5 @@ export function shoppingPlan(intent, message, history, autonomous) {
     (continuity === "followup" && /\ben (?:interieur|exterieur)\b/.test(context));
   const question = (plan.question === "venue" && venueAnswered || plan.question === "microphone" && ownsMicrophone)
     ? "none" : plan.question;
-  return { ...plan, wantsHeadphones, effectAdvice, clarification: intent.question === "clarify" ? safeClarification : "", continuity, allowOverBudget, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
+  return { ...plan, wantsHeadphones, effectAdvice, clarification: intent.question === "clarify" ? safeClarification : "", continuity, allowOverBudget: allowOverBudget && !explicitMaximum, flexibleComparison, outdoor, ownsMicrophone, beginner, compact, leftHanded, audience, question };
 }

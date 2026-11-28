@@ -182,13 +182,23 @@ function candidatesFor(products, slot, plan) {
   }).filter(candidate => !candidate.excluded);
 }
 
+function nearPrice(items, target, tieBreak) {
+  return [...items].sort((a, b) => Math.abs(a.price - target) - Math.abs(b.price - target) || tieBreak(a, b));
+}
+
 function prioritize(candidates, plan, estimatedBudget) {
   const near = candidates.filter(item => within(item.price, { ...plan, maxCents: estimatedBudget })).sort(byFit);
   const cheapest = [...near].sort((a, b) =>
     a.missing - b.missing || Number(a.compactPenalty) - Number(b.compactPenalty) || a.price - b.price || byFit(a, b));
   const alternatives = candidates.filter(item => !within(item.price, { ...plan, maxCents: estimatedBudget }))
     .sort((a, b) => a.missing - b.missing || a.price - b.price || byFit(a, b));
-  return [near[0], cheapest[0], near[1], alternatives[0], cheapest[1], alternatives[1], ...near, ...alternatives]
+  const tierCandidates = plan.compareProducts && plan.slots.length === 1 && estimatedBudget > 0
+    ? [0.8, 1, ...(plan.flexibleComparison ? [1.3] : [])].flatMap(ratio => nearPrice(
+      candidates.filter(item => !item.missing && !item.compactPenalty && usable(item.product, plan) &&
+        (ratio > 1 ? item.price > estimatedBudget && item.price <= estimatedBudget * 1.3
+          : within(item.price, { ...plan, maxCents: estimatedBudget }))), estimatedBudget * ratio, byFit).slice(0, 3))
+    : [];
+  return [...tierCandidates, near[0], cheapest[0], near[1], alternatives[0], cheapest[1], alternatives[1], ...near, ...alternatives]
     .filter(Boolean).map(item => item.product);
 }
 
@@ -237,9 +247,22 @@ function matchingSets(products, plan) {
     if (plan.compareProducts && plan.slots.length === 1) {
       const eligible = sorted.filter(set => set.items[0].url && (plan.compact || set.compact === best.compact));
       if (eligible.length) {
+        const budget = plan.maxCents;
         const priceOrder = [...eligible].sort((a, b) => a.price - b.price);
-        return { overBudget: false, priced: [...new Set([priceOrder[0], eligible[0], priceOrder.at(-1)])]
+        if (budget === null) return { overBudget: false, priced: [...new Set([priceOrder[0], eligible[0], priceOrder.at(-1)])]
           .sort((a, b) => a.price - b.price) };
+        const reference = nearPrice(eligible, budget, byAdvice)[0];
+        const economy = nearPrice(eligible.filter(set => set.price < reference.price), budget * 0.8, byAdvice)[0];
+        const baseline = reference.items[0];
+        const upgrade = plan.flexibleComparison ? nearPrice(sets.filter(set => {
+          const candidate = set.items[0];
+          return set.price > budget && set.price <= budget * 1.3 && candidate.url &&
+            set.compact === reference.compact &&
+            upgradeTraits(candidate, baseline, plan).length > 0;
+        }), budget * 1.3, byAdvice)[0] : undefined;
+        const third = upgrade ?? nearPrice(eligible.filter(set => set !== economy && set !== reference),
+          budget * 0.9, byAdvice)[0];
+        return { overBudget: false, priced: [economy, reference, third].filter(Boolean).sort((a, b) => a.price - b.price) };
       }
     }
     return { overBudget: false, priced: sorted
@@ -270,6 +293,15 @@ const genericBenefit = {
   pa: "Ce modèle réunit les fonctions demandées pour votre prestation.",
   other: "Ce modèle correspond au type de matériel et aux critères retenus."
 };
+
+function upgradeTraits(candidate, baseline, plan) {
+  const relevant = new Set(plan.slots.flatMap(slot => slot.required));
+  const usage = { electric: ["pickup"], amp: ["gain", "effects", "headphone"],
+    pa: ["battery", "bluetooth", "microphone", "portable"],
+    headphoneRig: ["tuner", "effects", "simpleControls"] };
+  for (const trait of usage[candidate.family] ?? []) relevant.add(trait);
+  return [...candidate.proved].filter(trait => relevant.has(trait) && !baseline.proved.has(trait) && explanations[trait]);
+}
 
 function benefitsFor(item, plan) {
   const { family, compact, proved } = item;
@@ -382,8 +414,14 @@ export async function advise(products, plan, { readLive, productLink, choose, co
       availability: availabilityOf(item.product), url: item.url
     }));
     const lines = products.map((product, index) => {
-      const benefit = benefitsFor(priced[index].items[0], plan)[0];
-      return [`• ${product.title} — ${product.price} TTC, ${product.availability}.`, benefit, product.url].filter(Boolean).join("\n");
+      const choice = priced[index];
+      const extra = plan.maxCents !== null && choice.price > plan.maxCents ? choice.price - plan.maxCents : 0;
+      const reference = priced.findLast(set => set.price <= plan.maxCents);
+      const benefit = extra
+        ? upgradeTraits(choice.items[0], reference.items[0], plan).map(trait => explanations[trait]).join(" ")
+        : benefitsFor(choice.items[0], plan)[0];
+      const overage = extra ? `Option facultative · ${money(extra)} au-dessus de votre budget.` : null;
+      return [`• ${product.title} — ${product.price} TTC, ${product.availability}.`, overage, benefit, product.url].filter(Boolean).join("\n");
     });
     return { reply: ["Voici les options que notre magasin peut vous proposer.", ...lines, question]
       .filter(Boolean).join("\n\n"), products, followUp: question ?? null, alternatives: true };

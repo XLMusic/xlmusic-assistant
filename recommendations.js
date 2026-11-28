@@ -67,6 +67,10 @@ function withExplicitBudget(plan, message) {
   const ceiling = [...message.matchAll(qualified)].at(-1);
   const amounts = [...message.matchAll(new RegExp(`(${amount})\\s*(?:€|euros?\\b|eur\\b)`, "giu"))];
   // Defer when different amounts may represent different budgets.
+  const trailingMaximum = new RegExp(`(${amount})\\s*(?:€|euros?\\b|eur\\b)\\s*(?:maximum|maxi|max|au plus)\\b`, "iu").exec(message);
+  if (trailingMaximum && new Set(amounts.map(match => cents(match[1]))).size === 1) {
+    return { ...plan, maxCents: cents(trailingMaximum[1]), exclusive: false };
+  }
   if (!ceiling || new Set(amounts.map(match => cents(match[1]))).size !== 1) return plan;
   return { ...plan, maxCents: cents(ceiling[2]), exclusive: /moins de|en dessous|inférieur/i.test(ceiling[1]) };
 }
