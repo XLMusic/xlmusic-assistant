@@ -183,7 +183,8 @@ export function shoppingPlan(intent, message, history, autonomous) {
         if (latest.includes(constraint) && !evidence.includes(constraint)) evidence.push(constraint);
       }
     }
-    plan.slots = [{ ...defaults, ...existing, family:"other", names, evidence, bass: genericBass, vocalMic: genericVocalMic, wiredMic: genericVocalMic && /\bfilaires?\b/.test(latest) }];
+    const required = genericVocalMic ? existing.required.filter(trait => trait !== "microphone") : existing.required;
+    plan.slots = [{ ...defaults, ...existing, family:"other", names, evidence, required, bass: genericBass, vocalMic: genericVocalMic, wiredMic: genericVocalMic && /\bfilaires?\b/.test(latest) }];
     if (plan.question === "clarify") plan.question = "none";
   }
   const audience = /\b(?:cinquantaine|50) (?:de )?(?:personnes|spectateurs)\b/.test(context);

@@ -35,7 +35,9 @@ const keyOf = product => String(product.oxId || product.id);
 const terms = value => normalize(value).split(" ").filter(word => word.length > 2);
 
 function descriptions(product) {
-  return [product.title, ...(product.description ?? "").split(/[;!?\n]|\.\s+|\bmais\b/i)]
+  // The TT1 Lanen manual confirms the connection for this exact XLMusic SKU.
+  const documented = product.id === "PRO-TT1" ? "Micro filaire XLR 3 broches" : "";
+  return [product.title, documented, ...(product.description ?? "").split(/[;!?\n]|\.\s+|\bmais\b/i)]
     .map(normalize).filter(Boolean);
 }
 
