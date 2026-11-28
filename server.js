@@ -130,7 +130,7 @@ f.onsubmit=async e=>{
   const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:m,history,conversation})});
   const d=await r.json();
   if(r.ok){conversation=d.conversation??null;if(d.contextMode==="new")history.length=0;
-   history.push({message:m,question:d.followUp,products:d.products.map(product=>product.title)});
+   history.push({message:m,question:d.followUp,answer:String(d.reply??"").slice(0,1400),products:d.products.map(product=>product.title)});
    if(history.length>4)history.splice(1,1)}
   add(d.reply||d.error,"ai",d.products);
  }catch{add("Erreur de connexion.","ai")}
@@ -185,13 +185,6 @@ app.post("/api/chat",async(req,res)=>{
  activeChats++;
  try{
   const message=clean(raw);
-  if(useOxatis || !catalog.length) await refreshCatalog();
-  if(!catalog.length)return res.status(503).json({error:"Je ne peux pas vérifier les produits pour le moment. Réessayez dans un instant."});
-  const snapshot=catalog;
-  const catalogServices = { readLive: oxatisConfigured ? oxatis.product : undefined, productLink,
-    commercialPolicy: await readCommercialPolicy() };
-  const exact = await adviseExactProduct(snapshot, message, catalogServices);
-  if (exact) return res.json(recordConversation(exact,{continuity:"new",maxCents:null},null,message));
   const boundedText = (value, limit) => typeof value === "string" && value.length <= limit ? clean(value) : "";
   const history = Array.isArray(req.body?.history) ? req.body.history.slice(-4).flatMap(item => {
    if (typeof item === "string") {
@@ -201,15 +194,12 @@ app.post("/api/chat",async(req,res)=>{
    const previous = boundedText(item?.message, 2000);
    if (!previous) return [];
    const products = Array.isArray(item.products) ? item.products.slice(0, 3).map(title => boundedText(title, 200)).filter(Boolean) : [];
-   return [{ message: previous, question: boundedText(item.question, 500), products }];
+   return [{ message: previous, question: boundedText(item.question, 500), answer: boundedText(item.answer, 1400), products }];
   }) : [];
-  const memory=restoreConversation(req.body?.conversation,history,snapshot);
-  const handled=await handleConversation(message,memory,snapshot,catalogServices);
-  if(handled)return res.json(handled);
   const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY, timeout:15000, maxRetries:0});
   const { autonomous, messages } = shoppingInput(history, message);
   const response=await client.responses.create({
-   model:MODEL, reasoning:{effort:"low"}, max_output_tokens:1700,
+   model:MODEL, reasoning:{effort:"low"}, max_output_tokens:2400,
    instructions:shoppingInstructions,
    input:messages,
    text:{format:shoppingFormat}
@@ -218,13 +208,35 @@ app.post("/api/chat",async(req,res)=>{
    return res.status(502).json({error:"Je n’ai pas pu analyser votre demande. Pouvez-vous la reformuler ?"});
   }
   const intent = JSON.parse(response.output_text);
-  if (["unknown", "acoustic", "nylon", "steel", "electric"].includes(intent.stringInstrument)) {
-   const stringAdvice = await handleConversation(message,memory,snapshot,catalogServices,intent.stringInstrument);
-   if (stringAdvice) return res.json(stringAdvice);
+  const generalAdvice = typeof intent.advice === "string"
+   ? intent.advice.replace(/<[^>]*>/g,"").trim().slice(0, 4200) : "";
+  if (intent.mode === "advice") {
+   const memory = restoreConversation(req.body?.conversation,history,[]);
+   const reply = generalAdvice || clean(intent.effectAdvice).slice(0, 620);
+   return reply
+    ? res.json({reply, products:[], followUp:null, contextMode:"followup", conversation:memory})
+    : res.status(502).json({error:"Je n’ai pas pu formuler la réponse. Pouvez-vous réessayer ?"});
   }
+  if(useOxatis || !catalog.length) await refreshCatalog();
+  if(!catalog.length)return res.status(503).json({error:"Je ne peux pas vérifier les produits pour le moment. Réessayez dans un instant."});
+  const snapshot=catalog;
+  const catalogServices = { readLive: oxatisConfigured ? oxatis.product : undefined, productLink,
+    commercialPolicy: await readCommercialPolicy() };
+  const withAdvice = result => {
+   if (generalAdvice) result.reply = [generalAdvice, result.reply].join("\n\n");
+   return result;
+  };
+  const exact = await adviseExactProduct(snapshot, message, catalogServices);
+  if (exact) return res.json(recordConversation(withAdvice(exact),{continuity:"new",maxCents:null},null,message));
+  const memory=restoreConversation(req.body?.conversation,history,snapshot);
+  const stringHint = ["unknown", "acoustic", "nylon", "steel", "electric"].includes(intent.stringInstrument)
+   ? intent.stringInstrument : null;
+  const handled=await handleConversation(message,memory,snapshot,catalogServices,stringHint,
+   Boolean(stringHint || intent.mode === "continuation" && memory.pending === "strings"));
+  if(handled)return res.json(withAdvice(handled));
   const plan = shoppingPlan(intent, message, history, autonomous);
   if (plan.clarification) {
-   const reply = [plan.effectAdvice, plan.clarification].filter(Boolean).join("\n\n");
+   const reply = [generalAdvice || plan.effectAdvice, plan.clarification].filter(Boolean).join("\n\n");
    return res.json(recordConversation({reply,products:[],followUp:plan.clarification},plan,memory,message));
   }
   if (plan.effectAdvice && !plan.slots.length && plan.question !== "clarify") {
@@ -237,7 +249,7 @@ app.post("/api/chat",async(req,res)=>{
   if(plan.continuity==="followup" && plan.addition) {
    const added=await addToConversation(plan,message,memory,snapshot,catalogServices);
    if(added) {
-    if (plan.effectAdvice) added.reply = [plan.effectAdvice, added.reply].join("\n\n");
+    if (generalAdvice || plan.effectAdvice) added.reply = [generalAdvice || plan.effectAdvice, added.reply].join("\n\n");
     return res.json(added);
    }
   }
@@ -253,7 +265,7 @@ app.post("/api/chat",async(req,res)=>{
     return advice.status === "completed" && advice.output_text ? JSON.parse(advice.output_text) : null;
    }
   });
-  if (plan.effectAdvice) result.reply = [plan.effectAdvice, result.reply].join("\n\n");
+  if (generalAdvice || plan.effectAdvice) result.reply = [generalAdvice || plan.effectAdvice, result.reply].join("\n\n");
   res.json(recordConversation(result,plan,memory,message));
  }catch {
   console.error("Analyse ou recherche de conseil impossible.");

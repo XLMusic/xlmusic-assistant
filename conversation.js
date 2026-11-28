@@ -138,7 +138,7 @@ function requestedBudget(message,state) {
 
 const availableBudget = (remaining,state) => remaining===null?null:remaining-Number(state.exclusive);
 
-export async function handleConversation(message,state,catalog,services,stringHint) {
+export async function handleConversation(message,state,catalog,services,stringHint, allowStrings = true) {
   const text=normalize(message);
   if (newTopic.test(text)) {
     if (!stringHint) return null;
@@ -152,7 +152,7 @@ export async function handleConversation(message,state,catalog,services,stringHi
     ? stringsForCatalogGuitar(text, catalog) : null;
   const explicitKind = stringKind(text) ?? (stringHint === "unknown" ? null : stringHint);
   const kind = namedGuitar && (!explicitKind || explicitKind === "acoustic") ? namedGuitar : explicitKind;
-  if (requestsStrings || stringHint || (state.topic==="strings" && (kind || previous==="strings" && text.split(" ").length<=6))) {
+  if (allowStrings && (requestsStrings || stringHint || (state.topic==="strings" && (kind || previous==="strings" && text.split(" ").length<=6)))) {
     const contextMode=state.topic==="strings"?"followup":"new";
     if (contextMode==="new") {state=empty();state.topic="strings";}
     state.budget=requestedBudget(message,state);
